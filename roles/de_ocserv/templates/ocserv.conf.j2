@@ -1,0 +1,76 @@
+# Managed by Ansible — do not edit by hand
+# {{ ansible_managed }}
+
+auth = "plain[passwd=/etc/ocserv/ocpasswd]"
+
+tcp-port = {{ ocserv_listen_tcp_port }}
+udp-port = {{ ocserv_listen_udp_port }}
+
+run-as-user = nobody
+run-as-group = daemon
+
+socket-file = /run/ocserv-socket
+chroot-dir = /var/lib/ocserv
+isolate-workers = true
+
+server-cert = /etc/letsencrypt/live/{{ ocserv_domain }}/fullchain.pem
+server-key  = /etc/letsencrypt/live/{{ ocserv_domain }}/privkey.pem
+
+max-clients = {{ ocserv_max_clients }}
+max-same-clients = {{ ocserv_max_same_clients }}
+rate-limit-ms = 100
+
+keepalive = {{ ocserv_keepalive_seconds }}
+dpd = {{ ocserv_dpd_seconds }}
+mobile-dpd = {{ ocserv_mobile_dpd_seconds }}
+switch-to-tcp-timeout = 25
+try-mtu-discovery = true
+
+cert-user-oid = 0.9.2342.19200300.100.1.1
+
+tls-priorities = "{{ ocserv_tls_priorities }}"
+
+auth-timeout = 240
+min-reauth-time = 300
+max-ban-score = 50
+ban-reset-time = 300
+
+cookie-timeout = 300
+deny-roaming = false
+rekey-time = 172800
+rekey-method = ssl
+
+use-occtl = true
+pid-file = /run/ocserv.pid
+
+# ocserv will create {{ ocserv_vpn_interface }} from this base name
+device = vpns
+predictable-ips = true
+
+# vpns0 appears only after the first client connects, so routing must be fixed from an ocserv hook, not from systemd ExecStartPost.
+connect-script = /usr/local/libexec/ocserv/route-up.sh
+
+ipv4-network = {{ ocserv_vpn_network }}
+ipv4-netmask = {{ ocserv_vpn_netmask }}
+
+# Push DNS — local unbound on the gateway IP
+dns = {{ ocserv_vpn_gateway }}
+
+ping-leases = false
+cisco-client-compat = true
+dtls-legacy = true
+
+# AnyConnect / OpenConnect compatibility
+client-bypass-protocol = false
+
+# Resilience
+ipv6-network = ""
+
+route = default
+no-route = {{ ocserv_vpn_network }}/{{ ocserv_vpn_netmask }}
+
+tunnel-all-dns = true
+
+# Per-user / per-group config dirs (empty for now, but enabled for future use)
+config-per-user = /etc/ocserv/config-per-user/
+config-per-group = /etc/ocserv/config-per-group/

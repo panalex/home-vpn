@@ -1,0 +1,9 @@
+#!/usr/sbin/nft -f
+# Managed by Ansible — masquerade for ocserv VPN clients
+
+table ip ocserv_nat {
+    chain postrouting {
+        type nat hook postrouting priority 100;
+        ip saddr {{ ocserv_vpn_network }}/{{ ocserv_vpn_prefix }} oifname "{{ ocserv_egress_interface }}" masquerade
+    }
+}

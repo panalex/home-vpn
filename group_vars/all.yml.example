@@ -1,0 +1,97 @@
+---
+# =============================================================================
+# Versions
+# =============================================================================
+singbox_version: "1.13.7"
+mtg_version: "v2.2.8"
+
+common_disable_ipv6: true
+common_manage_unattended_upgrades: false
+
+singbox_arch_map:
+  x86_64: amd64
+  amd64: amd64
+  aarch64: arm64
+  arm64: arm64
+
+# =============================================================================
+# DE -> sing-box server (chain only, locked to RU IP via firewall)
+# =============================================================================
+singbox_server_port: 4433
+singbox_server_method: "2022-blake3-aes-256-gcm"
+singbox_server_password: "REPLACE_ME_BASE64_32_BYTES"
+singbox_server_listen: "0.0.0.0"
+singbox_server_multiplex: true
+
+# =============================================================================
+# RU -> sing-box client (relays everything to DE)
+# =============================================================================
+ru_singbox_socks_bind: "127.0.0.1"
+ru_singbox_socks_port: 1081
+ru_singbox_http_bind: "127.0.0.1"
+ru_singbox_http_port: 1080
+ru_singbox_default_interface: "auto"
+
+# =============================================================================
+# MTG / Telegram ingress on RU
+# =============================================================================
+mtg_bind_port: 443
+mtg_bind_host: "0.0.0.0"
+mtg_concurrency: 4096
+mtg_prefer_ip: "only-ipv4"
+mtg_proxy_via_socks_uri: "socks5://127.0.0.1:1081"
+mtg_dns: "https://1.1.1.1/dns-query"
+mtg_domain_fronting_port: 443
+mtg_public_ipv4: "{{ ansible_host }}"
+mtg_secret_override: ""
+
+# =============================================================================
+# Public browser proxy on RU (SOCKS5/HTTP with auth)
+# Expose externally for FoxyProxy etc.
+# =============================================================================
+ru_public_proxy_enable: true
+ru_public_proxy_bind: "0.0.0.0"
+ru_public_proxy_socks_port: 2081
+ru_public_proxy_http_port: 2080
+
+# =============================================================================
+# OpenConnect / ocserv on DE (full-tunnel VPN)
+# =============================================================================
+ocserv_domain: "vpn.example.net"
+ocserv_acme_email: "admin@example.net"
+
+ocserv_tls_priorities: "NORMAL:%SERVER_PRECEDENCE:%COMPAT:-RSA:-VERS-SSL3.0:-ARCFOUR-128:-VERS-TLS1.0:-VERS-TLS1.1"
+
+ocserv_listen_tcp_port: 443
+ocserv_listen_udp_port: 443
+
+ocserv_vpn_network: "10.99.0.0"
+ocserv_vpn_netmask: "255.255.255.0"
+ocserv_vpn_prefix: 24
+ocserv_vpn_gateway: "10.99.0.1"
+
+ocserv_max_clients: 32
+ocserv_max_same_clients: 4
+
+# =============================================================================
+# Unified users list — used for BOTH browser proxy on RU AND ocserv VPN on DE.
+# Each user gets ONE password used in both places.
+# Generate passwords with:
+#   for u in alice wife friend1; do
+#     printf '  - name: %s\n    password: "%s"\n' "$u" \
+#       "$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 24)"
+#   done
+# =============================================================================
+vpn_users:
+  - name: alice
+    password: "REPLACE_ME"
+  # - name: wife
+  #   password: "REPLACE_ME"
+
+# Aliases for clarity in templates (point to the same list)
+proxy_users: "{{ vpn_users }}"
+
+# =============================================================================
+# SSH
+# =============================================================================
+ssh_port: 22

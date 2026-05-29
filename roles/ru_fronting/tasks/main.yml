@@ -1,0 +1,85 @@
+---
+- name: Install nginx and openssl
+  ansible.builtin.apt:
+    name:
+      - nginx
+      - openssl
+    state: present
+    update_cache: true
+
+- name: Create directories for static site and local certs
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: "/etc/nginx/self", mode: "0755" }
+    - { path: "/var/www/{{ domain }}", mode: "0755" }
+
+- name: Generate self-signed certificate for local fronting backend
+  ansible.builtin.command:
+    cmd: >
+      openssl req -x509 -nodes -newkey rsa:2048 -days 3650
+      -keyout /etc/nginx/self/{{ domain }}.key
+      -out /etc/nginx/self/{{ domain }}.crt
+      -subj /CN={{ domain }}
+  args:
+    creates: "/etc/nginx/self/{{ domain }}.crt"
+
+- name: Fix private key permissions
+  ansible.builtin.file:
+    path: "/etc/nginx/self/{{ domain }}.key"
+    owner: root
+    group: root
+    mode: "0600"
+
+- name: Deploy static index page
+  ansible.builtin.template:
+    src: index.html.j2
+    dest: "/var/www/{{ domain }}/index.html"
+    owner: www-data
+    group: www-data
+    mode: "0644"
+
+- name: Deploy static
+  ansible.builtin.copy:
+    src: files/static/
+    dest: "/var/www/{{ domain }}/"
+    owner: www-data
+    group: www-data
+    mode: "0644"
+  notify: Restart nginx
+
+- name: Deploy nginx fronting vhost
+  ansible.builtin.template:
+    src: nginx-fronting.conf.j2
+    dest: "/etc/nginx/sites-available/{{ domain }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart nginx
+
+- name: Enable nginx fronting vhost
+  ansible.builtin.file:
+    src: "/etc/nginx/sites-available/{{ domain }}"
+    dest: "/etc/nginx/sites-enabled/{{ domain }}"
+    state: link
+  notify: Restart nginx
+
+- name: Disable default nginx site if present
+  ansible.builtin.file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify: Restart nginx
+
+- name: Validate nginx config
+  ansible.builtin.command: nginx -t
+  changed_when: false
+
+- name: Ensure nginx is enabled and running
+  ansible.builtin.systemd:
+    name: nginx
+    enabled: true
+    state: started

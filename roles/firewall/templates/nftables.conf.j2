@@ -1,0 +1,65 @@
+#!/usr/sbin/nft -f
+flush ruleset
+
+table inet filter {
+  chain input {
+    type filter hook input priority 0; policy drop;
+
+    iif "lo" accept
+    ct state established,related accept
+
+    tcp dport {{ ssh_port }} accept
+
+    {% if 'ru_vps' in group_names %}
+    tcp dport 80 accept
+    tcp dport {{ mtg_bind_port }} accept
+    {% if ru_public_proxy_enable | bool %}
+    tcp dport {{ ru_public_proxy_socks_port }} accept
+    tcp dport {{ ru_public_proxy_http_port }} accept
+    {% endif %}
+    {% endif %}
+
+    {% if 'de_vps' in group_names %}
+    # acme http-01 challenge
+    tcp dport 80 accept
+    # ocserv: TCP+UDP on 443
+    tcp dport {{ ocserv_listen_tcp_port | default(443) }} accept
+    udp dport {{ ocserv_listen_udp_port | default(443) }} accept
+    # DNS for VPN clients to local unbound
+    iifname "{{ ocserv_vpn_interface | default('vpns0') }}" udp dport 53 accept
+    iifname "{{ ocserv_vpn_interface | default('vpns0') }}" tcp dport 53 accept
+    # legacy chain inbound from RU only
+    ip saddr {{ hostvars[groups['ru_vps'][0]].ansible_host | default(groups['ru_vps'][0]) }}/32 tcp dport {{ singbox_server_port }} accept
+    {% endif %}
+
+    ip protocol icmp accept
+    meta l4proto ipv6-icmp accept
+  }
+
+  chain forward {
+    type filter hook forward priority 0; policy drop;
+
+    {% if 'de_vps' in group_names and ocserv_vpn_network is defined %}
+    # ocserv VPN client forwarding
+    iifname "{{ ocserv_vpn_interface | default('vpns0') }}" oifname "{{ ocserv_egress_interface | default('eth0') }}" accept
+    iifname "{{ ocserv_egress_interface | default('eth0') }}" oifname "{{ ocserv_vpn_interface | default('vpns0') }}" ct state established,related accept
+    {% endif %}
+  }
+
+  chain output {
+    type filter hook output priority 0; policy accept;
+
+    {% if 'ru_vps' in group_names %}
+    ct state established,related accept
+    meta skuid "mtg" oif "lo" tcp dport 1081 accept
+    meta skuid "mtg" oif "lo" udp dport 53 accept
+    meta skuid "mtg" oif "lo" tcp dport 53 accept
+    meta skuid "mtg" ip daddr 127.0.0.0/8 accept
+    meta skuid "mtg" ip6 daddr ::1 accept
+    meta skuid "mtg" ct state new reject with icmpx admin-prohibited
+    {% endif %}
+  }
+}
+
+# Include any additional rules (e.g. ocserv NAT)
+include "/etc/nftables.d/*.conf"

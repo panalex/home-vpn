@@ -1,0 +1,12 @@
+---
+# Single list of users that get both proxy auth (RU) and VPN access (DE).
+# Each user has a single password used for both proxy basic auth and ocserv login.
+#
+# Generate per-user passwords with:
+#   for u in alice wife friend1; do
+#     printf '  - name: %s\n    password: "%s"\n' "$u" \
+#       "$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 24)"
+#   done
+#
+# Override `users` in group_vars/all.yml.
+users: []

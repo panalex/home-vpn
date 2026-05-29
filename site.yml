@@ -1,0 +1,44 @@
+---
+- name: Base preparation on all hosts
+  hosts: all
+  become: true
+  roles:
+    - role: common
+      tags: [common]
+
+- name: Configure DE egress gateway and VPN
+  hosts: de_vps
+  become: true
+  roles:
+    - role: de_unbound
+      tags: [de_unbound, de, dns]
+    - role: de_singbox
+      tags: [de_singbox, de, singbox]
+    - role: de_ocserv
+      tags: [de_ocserv, de, ocserv, vpn]
+    - role: firewall
+      tags: [firewall, de]
+
+- name: Configure RU ingress and relay node
+  hosts: ru_vps
+  become: true
+  roles:
+    - role: ru_fronting
+      tags: [ru_fronting, ru, web]
+    - role: ru_letsencrypt
+      tags: [ru_letsencrypt, ru, web, letsencrypt]
+    - role: ru_singbox
+      tags: [ru_singbox, ru, singbox]
+    - role: ru_mtg
+      tags: [ru_mtg, ru, telegram]
+    - role: firewall
+      tags: [firewall, ru]
+
+- name: Sync users (proxy + VPN)
+  hosts: de_vps
+  become: true
+  vars:
+    users: "{{ vpn_users | default([]) }}"
+  roles:
+    - role: users
+      tags: [users]

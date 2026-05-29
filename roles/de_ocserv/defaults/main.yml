@@ -1,0 +1,25 @@
+---
+ocserv_domain: "vpn.example.net"
+ocserv_acme_email: "{{ email | default('admin@example.net') }}"
+
+ocserv_listen_tcp_port: 443
+ocserv_listen_udp_port: 443
+
+ocserv_vpn_network: "10.99.0.0"
+ocserv_vpn_netmask: "255.255.255.0"
+ocserv_vpn_prefix: 24
+ocserv_vpn_gateway: "10.99.0.1"
+
+ocserv_max_clients: 32
+ocserv_max_same_clients: 4
+ocserv_keepalive_seconds: 32400
+ocserv_dpd_seconds: 90
+ocserv_mobile_dpd_seconds: 1800
+
+ocserv_tls_priorities: "NORMAL:%SERVER_PRECEDENCE:%COMPAT:-RSA:-VERS-SSL3.0:-ARCFOUR-128:-VERS-TLS1.0:-VERS-TLS1.1"
+
+# Egress interface on DE — used for masquerading client traffic
+ocserv_egress_interface: "{{ ansible_default_ipv4.interface }}"
+
+# Concrete tun interface created by ocserv when device = vpns.
+ocserv_vpn_interface: "vpns0"

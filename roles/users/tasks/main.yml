@@ -1,0 +1,67 @@
+---
+# This role:
+# - On DE: syncs /etc/ocserv/ocpasswd from `users` list (adds/updates/removes).
+# - On RU: nothing here directly — proxy_users are templated by ru_singbox role,
+#   so re-running the playbook (or just `--tags ru_singbox`) is enough.
+# Run on de_vps only:
+- name: Build ocpasswd content
+  ansible.builtin.set_fact:
+    ocpasswd_lines: >-
+      {{ users
+         | map(attribute='name')
+         | zip(users | map(attribute='password'))
+         | list }}
+  when: "'de_vps' in group_names"
+
+- name: Generate ocpasswd hashes (one user at a time via ocpasswd CLI)
+  ansible.builtin.shell: |
+    set -euo pipefail
+    PW='{{ item.password }}'
+    USER='{{ item.name }}'
+    # ocpasswd writes a fresh file when -c is given; without -c it appends/updates
+    if grep -qE "^${USER}:" /etc/ocserv/ocpasswd 2>/dev/null; then
+      # Update: remove old line, then add fresh
+      sed -i "/^${USER}:/d" /etc/ocserv/ocpasswd
+    fi
+    echo "$PW" | ocpasswd -c /etc/ocserv/ocpasswd "$USER" >/dev/null 2>&1 || \
+      printf '%s\n%s\n' "$PW" "$PW" | ocpasswd /etc/ocserv/ocpasswd "$USER"
+  args:
+    executable: /bin/bash
+  loop: "{{ users }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: "'de_vps' in group_names"
+  register: ocpasswd_apply
+  changed_when: true
+  no_log: true
+
+- name: Read current ocpasswd users
+  ansible.builtin.slurp:
+    src: /etc/ocserv/ocpasswd
+  register: ocpasswd_raw
+  when: "'de_vps' in group_names"
+
+# - name: Remove ocserv users not in the desired list
+#   ansible.builtin.lineinfile:
+#     path: /etc/ocserv/ocpasswd
+#     regexp: "^{{ item }}:"
+#     state: absent
+#   loop: >-
+#     {{
+#       (ocpasswd_raw.content | b64decode).split('\n')
+#         | select('match', '^[^:#]+:')
+#         | map('regex_replace', '^([^:]+):.*', '\\1')
+#         | list
+#         | difference(users | map(attribute='name') | list)
+#     }}
+#   loop_control:
+#     label: "{{ item }}"
+#   when:
+#     - "'de_vps' in group_names"
+#     - users | length > 0
+
+- name: Show summary
+  ansible.builtin.debug:
+    msg: >-
+      Synced {{ users | length }} user(s) on {{ inventory_hostname }}.
+  when: "'de_vps' in group_names"

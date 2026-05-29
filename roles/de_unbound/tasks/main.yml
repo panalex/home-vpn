@@ -1,0 +1,77 @@
+---
+- name: Bootstrap /etc/resolv.conf with public DNS so apt and certbot work
+  ansible.builtin.copy:
+    dest: /etc/resolv.conf
+    content: |
+      nameserver 1.1.1.1
+      nameserver 9.9.9.9
+      options edns0 trust-ad
+    owner: root
+    group: root
+    mode: '0644'
+    follow: false
+    force: true
+
+- name: Install unbound
+  ansible.builtin.apt:
+    name:
+      - unbound
+      - dns-root-data
+    state: present
+    update_cache: true
+
+- name: Disable systemd-resolved (frees port 53)
+  ansible.builtin.systemd:
+    name: systemd-resolved
+    enabled: false
+    state: stopped
+  failed_when: false
+
+- name: Allow non-local bind for unbound
+  ansible.posix.sysctl:
+    name: net.ipv4.ip_nonlocal_bind
+    value: '1'
+    state: present
+    sysctl_file: /etc/sysctl.d/99-unbound.conf
+    reload: true
+
+- name: Remove debian default auto-trust-anchor config (conflicts with our static one)
+  ansible.builtin.file:
+    path: /etc/unbound/unbound.conf.d/root-auto-trust-anchor-file.conf
+    state: absent
+  notify: Restart unbound
+
+- name: Deploy unbound configuration
+  ansible.builtin.template:
+    src: unbound.conf.j2
+    dest: /etc/unbound/unbound.conf.d/atd.conf
+    owner: root
+    group: root
+    mode: '0644'
+    validate: '/usr/sbin/unbound-checkconf %s'
+  notify: Restart unbound
+
+- name: Ensure unbound is enabled and running
+  ansible.builtin.systemd:
+    name: unbound
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Wait for unbound on 127.0.0.1:53
+  ansible.builtin.wait_for:
+    host: "127.0.0.1"
+    port: 53
+    timeout: 15
+
+- name: Replace /etc/resolv.conf with static file pointing to local unbound
+  ansible.builtin.copy:
+    dest: /etc/resolv.conf
+    content: |
+      nameserver 127.0.0.1
+      options edns0 trust-ad
+    owner: root
+    group: root
+    mode: '0644'
+    follow: false
+    force: true

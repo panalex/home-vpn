@@ -1,0 +1,9 @@
+[ru_vps]
+192.168.1.1 ansible_user=root
+
+[de_vps]
+192.168.1.2 ansible_user=root
+
+[all:vars]
+domain=example.com
+email=admin@example.com

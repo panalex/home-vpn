@@ -1,0 +1,49 @@
+---
+- name: Resolve sing-box package architecture
+  ansible.builtin.set_fact:
+    singbox_pkg_arch: "{{ singbox_arch_map[ansible_architecture] | default('amd64') }}"
+
+- name: Download sing-box package
+  ansible.builtin.get_url:
+    url: "https://github.com/SagerNet/sing-box/releases/download/v{{ singbox_version }}/sing-box_{{ singbox_version }}_linux_{{ singbox_pkg_arch }}.deb"
+    dest: "/tmp/sing-box_{{ singbox_version }}_linux_{{ singbox_pkg_arch }}.deb"
+    mode: '0644'
+
+- name: Install sing-box package
+  ansible.builtin.apt:
+    deb: "/tmp/sing-box_{{ singbox_version }}_linux_{{ singbox_pkg_arch }}.deb"
+    state: present
+
+- name: Ensure sing-box config directory exists
+  ansible.builtin.file:
+    path: /etc/sing-box
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Deploy sing-box config for DE
+  ansible.builtin.template:
+    src: sing-box-de.json.j2
+    dest: /etc/sing-box/config.json
+    owner: root
+    group: root
+    mode: '0644'
+    validate: '/usr/bin/sing-box check -c %s'
+  notify: Restart sing-box
+
+- name: Enable and start sing-box on DE
+  ansible.builtin.systemd:
+    name: sing-box
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Wait for DE sing-box TCP listener
+  ansible.builtin.wait_for:
+    host: "127.0.0.1"
+    port: "{{ singbox_server_port }}"
+    timeout: 20
+
+- name: Flush handlers before next role runs
+  ansible.builtin.meta: flush_handlers

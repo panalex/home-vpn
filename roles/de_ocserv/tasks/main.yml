@@ -1,0 +1,137 @@
+---
+- name: Install ocserv and certbot
+  ansible.builtin.apt:
+    name:
+      - ocserv
+      - certbot
+      - gnutls-bin
+    state: present
+    update_cache: true
+
+- name: Stop ocserv before initial cert issuance
+  ansible.builtin.systemd:
+    name: ocserv
+    state: stopped
+  failed_when: false
+
+- name: Check if Let's Encrypt cert already exists
+  ansible.builtin.stat:
+    path: "/etc/letsencrypt/live/{{ ocserv_domain }}/fullchain.pem"
+  register: le_cert
+
+- name: Issue Let's Encrypt certificate (standalone http-01)
+  ansible.builtin.command:
+    cmd: >-
+      certbot certonly --standalone --non-interactive --agree-tos
+      --email {{ ocserv_acme_email }}
+      -d {{ ocserv_domain }}
+      --preferred-challenges http
+  when: not le_cert.stat.exists
+  register: certbot_run
+  changed_when: certbot_run.rc == 0
+
+- name: Ensure cert auto-renewal hook reloads ocserv
+  ansible.builtin.copy:
+    dest: /etc/letsencrypt/renewal-hooks/deploy/ocserv-reload.sh
+    mode: '0755'
+    content: |
+      #!/bin/sh
+      systemctl reload ocserv
+  notify: Reload ocserv
+
+- name: Ensure ocpasswd file exists
+  ansible.builtin.file:
+    path: /etc/ocserv/ocpasswd
+    state: touch
+    owner: root
+    group: root
+    mode: '0600'
+  changed_when: false
+
+- name: Ensure ocserv helper directory exists
+  ansible.builtin.file:
+    path: /usr/local/libexec/ocserv
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Deploy ocserv route-up hook
+  ansible.builtin.template:
+    src: route-up.sh.j2
+    dest: /usr/local/libexec/ocserv/route-up.sh
+    owner: root
+    group: root
+    mode: '0755'
+  notify: Restart ocserv
+
+- name: Deploy ocserv configuration
+  ansible.builtin.template:
+    src: ocserv.conf.j2
+    dest: /etc/ocserv/ocserv.conf
+    owner: root
+    group: root
+    mode: '0640'
+    validate: '/usr/sbin/ocserv -t -c %s'
+  notify: Restart ocserv
+
+
+- name: Remove obsolete ocserv systemd route override
+  ansible.builtin.file:
+    path: /etc/systemd/system/ocserv.service.d/10-vpn-route.conf
+    state: absent
+  notify: Restart ocserv
+
+- name: Enable IPv4 forwarding
+  ansible.posix.sysctl:
+    name: net.ipv4.ip_forward
+    value: '1'
+    state: present
+    sysctl_file: /etc/sysctl.d/99-ocserv.conf
+    reload: true
+
+- name: Ensure /etc/nftables.d include directory exists
+  ansible.builtin.file:
+    path: /etc/nftables.d
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Deploy NAT rules for VPN clients
+  ansible.builtin.template:
+    src: ocserv-nat.nft.j2
+    dest: /etc/nftables.d/ocserv-nat.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Apply nftables
+
+- name: Flush ocserv handlers before runtime checks
+  ansible.builtin.meta: flush_handlers
+
+- name: Ensure ocserv is enabled and running
+  ansible.builtin.systemd:
+    name: ocserv
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Wait for ocserv on TCP {{ ocserv_listen_tcp_port }}
+  ansible.builtin.wait_for:
+    host: "0.0.0.0"
+    port: "{{ ocserv_listen_tcp_port }}"
+    timeout: 20
+
+- name: Check whether ocserv VPN interface exists now
+  ansible.builtin.command: >-
+    ip link show {{ ocserv_vpn_interface }}
+  register: ocserv_vpn_interface_check
+  changed_when: false
+  failed_when: false
+
+- name: Ensure ocserv VPN route is present now when interface exists
+  ansible.builtin.command: >-
+    ip route replace {{ ocserv_vpn_network }}/{{ ocserv_vpn_prefix }} dev {{ ocserv_vpn_interface }}
+  when: ocserv_vpn_interface_check.rc == 0
+  changed_when: false

@@ -1,0 +1,18 @@
+#!/bin/sh
+# Managed by Ansible - do not edit by hand
+# {{ ansible_managed }}
+
+IFACE="{{ ocserv_vpn_interface }}"
+ROUTE="{{ ocserv_vpn_network }}/{{ ocserv_vpn_prefix }}"
+
+# ocserv creates vpns0 lazily, on first client connection.
+# The hook is intentionally best-effort: a route failure must not reject a VPN login.
+for _ in 1 2 3 4 5; do
+    if /usr/sbin/ip link show "$IFACE" >/dev/null 2>&1; then
+        /usr/sbin/ip route replace "$ROUTE" dev "$IFACE" || true
+        exit 0
+    fi
+    sleep 1
+done
+
+exit 0

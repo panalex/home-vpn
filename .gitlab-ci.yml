@@ -1,0 +1,19 @@
+stages:
+  - lint
+
+variables:
+  ANSIBLE_FORCE_COLOR: "true"
+  ANSIBLE_HOST_KEY_CHECKING: "false"
+
+ansible:syntax:
+  stage: lint
+  image: python:3.12-slim
+  before_script:
+    - python -m pip install --upgrade pip
+    - pip install ansible-core yamllint
+    - ansible-galaxy collection install -r requirements.yml
+    - cp inventory.ini.example inventory.ini
+    - cp group_vars/all.yml.example group_vars/all.yml
+  script:
+    - yamllint -d relaxed .
+    - ansible-playbook --syntax-check site.yml

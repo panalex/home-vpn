@@ -1,0 +1,29 @@
+# Local inventory and secrets
+inventory.ini
+group_vars/all.yml
+host_vars/*.yml
+*.vault
+.vault_pass
+.env
+.env.*
+scrips/
+
+# Generated client configs and operational dumps
+client_configs/
+*.pcf
+*.mobileconfig
+*.ovpn
+*.tgproxy
+*.log
+*.retry
+
+# Ansible local state
+.ansible/
+ansible_facts/
+
+# Python/editor/system noise
+__pycache__/
+*.py[cod]
+.DS_Store
+.idea/
+.vscode/

@@ -1,0 +1,56 @@
+server:
+    verbosity: 1
+    interface: 127.0.0.1
+    interface: 10.99.0.1
+    interface-automatic: yes
+    # interface: 0.0.0.0
+    port: 53
+
+    ip-freebind: yes
+
+    # Listen on UDP+TCP
+    do-udp: yes
+    do-tcp: yes
+    do-ip4: yes
+    do-ip6: no
+
+    # Access control: localhost + VPN clients
+    access-control: 127.0.0.0/8 allow
+    access-control: {{ ocserv_vpn_network }}/{{ ocserv_vpn_prefix }} allow
+
+    # Privacy and hardening
+    hide-identity: yes
+    hide-version: yes
+    qname-minimisation: yes
+    aggressive-nsec: yes
+    harden-dnssec-stripped: yes
+    harden-glue: yes
+    harden-below-nxdomain: yes
+    use-caps-for-id: no
+    prefetch: yes
+    prefetch-key: yes
+    cache-min-ttl: 60
+    cache-max-ttl: 86400
+    msg-cache-size: 64m
+    rrset-cache-size: 128m
+
+    # Limit logging noise
+    log-queries: no
+    log-replies: no
+    log-servfail: yes
+
+    # Trust anchor (DNSSEC) — provided by dns-root-data package
+    trust-anchor-file: "/usr/share/dns/root.key"
+
+    # Don't fall back to direct queries if DoT upstream fails — fail closed
+    tls-cert-bundle: "/etc/ssl/certs/ca-certificates.crt"
+
+forward-zone:
+    name: "."
+    forward-tls-upstream: yes
+    # Cloudflare
+    forward-addr: 1.1.1.1@853#cloudflare-dns.com
+    forward-addr: 1.0.0.1@853#cloudflare-dns.com
+    # Quad9 (with malware filtering)
+    forward-addr: 9.9.9.9@853#dns.quad9.net
+    forward-addr: 149.112.112.112@853#dns.quad9.net

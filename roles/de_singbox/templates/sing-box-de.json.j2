@@ -1,0 +1,52 @@
+{
+  "log": {
+    "disabled": false,
+    "level": "info",
+    "timestamp": true
+  },
+  "dns": {
+    "servers": [
+      {
+        "type": "udp",
+        "tag": "remote-dns",
+        "server": "127.0.0.1",
+        "server_port": 53
+      }
+    ],
+    "rules": [
+      { "server": "remote-dns" }
+    ],
+    "strategy": "ipv4_only"
+  },
+  "inbounds": [
+    {
+      "type": "shadowsocks",
+      "tag": "ss-in",
+      "listen": "{{ singbox_server_listen }}",
+      "listen_port": {{ singbox_server_port }},
+      "method": "{{ singbox_server_method }}",
+      "password": "{{ singbox_server_password }}"{% if singbox_server_multiplex | bool %},
+      "multiplex": {
+        "enabled": true,
+        "padding": true
+      }{% endif %}
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "direct",
+      "tag": "direct"
+    }
+  ],
+  "route": {
+    "auto_detect_interface": true,
+    "final": "direct",
+    "default_domain_resolver": {
+      "server": "remote-dns"
+    },
+    "rules": [
+      { "action": "sniff" },
+      { "protocol": "dns", "action": "hijack-dns" }
+    ]
+  }
+}

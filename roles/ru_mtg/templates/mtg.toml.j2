@@ -1,0 +1,23 @@
+secret = "{{ mtg_secret_effective }}"
+bind-to = "{{ mtg_bind_host }}:{{ mtg_bind_port }}"
+concurrency = {{ mtg_concurrency }}
+prefer-ip = "{{ mtg_prefer_ip }}"
+public-ipv4 = "{{ mtg_public_ipv4 }}"
+auto-update = false
+allow-fallback-on-unknown-dc = false
+
+[domain-fronting]
+ip = "127.0.0.1"
+port = 8443
+
+[network]
+dns = "{{ mtg_dns }}"
+proxies = ["{{ mtg_proxy_via_socks_uri }}"]
+tcp-timeout = "15s"
+idle-timeout = "1m"
+
+[network.keep-alive]
+disabled = false
+idle = "15s"
+interval = "15s"
+count = 9

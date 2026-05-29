@@ -1,0 +1,108 @@
+{
+  "log": {
+    "disabled": false,
+    "level": "info",
+    "timestamp": true
+  },
+  "dns": {
+    "servers": [
+      {
+        "type": "udp",
+        "tag": "remote-dns",
+        "server": "1.1.1.1",
+        "server_port": 53,
+        "detour": "de-ss"
+      },
+      {
+        "type": "local",
+        "tag": "local-dns"
+      }
+    ],
+    "rules": [
+      { "server": "remote-dns" }
+    ],
+    "strategy": "ipv4_only"
+  },
+  "inbounds": [
+    {
+      "type": "socks",
+      "tag": "local-socks",
+      "listen": "{{ ru_singbox_socks_bind }}",
+      "listen_port": {{ ru_singbox_socks_port }}
+    },
+    {
+      "type": "http",
+      "tag": "local-http",
+      "listen": "{{ ru_singbox_http_bind }}",
+      "listen_port": {{ ru_singbox_http_port }}
+    }{% if ru_public_proxy_enable | bool %},
+    {
+      "type": "socks",
+      "tag": "public-socks",
+      "listen": "{{ ru_public_proxy_bind }}",
+      "listen_port": {{ ru_public_proxy_socks_port }},
+      "users": [
+        {% for u in proxy_users %}
+        {
+          "username": "{{ u.name }}",
+          "password": "{{ u.password }}"
+        }{% if not loop.last %},{% endif %}
+        {% endfor %}
+      ]
+    },
+    {
+      "type": "http",
+      "tag": "public-http",
+      "listen": "{{ ru_public_proxy_bind }}",
+      "listen_port": {{ ru_public_proxy_http_port }},
+      "users": [
+        {% for u in proxy_users %}
+        {
+          "username": "{{ u.name }}",
+          "password": "{{ u.password }}"
+        }{% if not loop.last %},{% endif %}
+        {% endfor %}
+      ]
+    }{% endif %}
+  ],
+  "outbounds": [
+    {
+      "type": "shadowsocks",
+      "tag": "de-ss",
+      "server": "{{ hostvars[groups['de_vps'][0]].ansible_host | default(groups['de_vps'][0]) }}",
+      "server_port": {{ singbox_server_port }},
+      "method": "{{ singbox_server_method }}",
+      "password": "{{ singbox_server_password }}"{% if singbox_server_multiplex | bool %},
+      "multiplex": {
+        "enabled": true,
+        "protocol": "h2mux",
+        "padding": true
+      }{% endif %}
+    },
+    {
+      "type": "direct",
+      "tag": "direct"
+    }
+  ],
+  "route": {
+    {% if ru_singbox_default_interface == "auto" %}
+    "auto_detect_interface": true,
+    {% else %}
+    "default_interface": "{{ ru_singbox_default_interface }}",
+    {% endif %}
+    "final": "de-ss",
+    "default_domain_resolver": {
+      "server": "remote-dns"
+    },
+    "rules": [
+      {
+        "ip_cidr": ["{{ hostvars[groups['de_vps'][0]].ansible_host | default(groups['de_vps'][0]) }}/32"],
+        "outbound": "direct"
+      },
+      {
+        "port": [{{ ssh_port }}],
+        "outbound": "direct"
+      }
+    ]
+  }
+}

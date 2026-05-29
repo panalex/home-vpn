@@ -1,0 +1,24 @@
+[Unit]
+Description=mtg - MTProto proxy server
+Documentation=https://github.com/9seconds/mtg
+After=network-online.target sing-box.service
+Wants=network-online.target sing-box.service
+
+[Service]
+Type=simple
+User=mtg
+Group=mtg
+ExecStart=/usr/local/bin/mtg run /etc/mtg/mtg.toml
+Restart=always
+RestartSec=3
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/mtg
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

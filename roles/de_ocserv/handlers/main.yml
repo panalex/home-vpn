@@ -1,0 +1,15 @@
+---
+- name: Restart ocserv
+  ansible.builtin.systemd:
+    name: ocserv
+    state: restarted
+    daemon_reload: true
+
+- name: Reload ocserv
+  ansible.builtin.systemd:
+    name: ocserv
+    state: reloaded
+
+- name: Apply nftables
+  ansible.builtin.command: nft -f /etc/nftables.conf
+  changed_when: true
