@@ -100,3 +100,41 @@ proxy_users: "{{ vpn_users }}"
 # SSH
 # =============================================================================
 ssh_port: 22
+
+# =============================================================================
+# DPI bypass — nfqws, прямой WAN + десинк для РКН-заблокированных с RU IP
+# =============================================================================
+# MediaTek HW offload обходит netfilter, поэтому NFQUEUE его не видит.
+# flint_disable_hw_offload: true отключает hw offload на роутере (sw остаётся).
+# На 500 Мбит/с при низкой нагрузке потеря скорости некритична.
+flint_disable_hw_offload: true
+
+dpi_bypass_domains:
+  - youtube.com
+  - googlevideo.com
+  - ytimg.com
+  - ggpht.com
+  - instagram.com
+  - cdninstagram.com
+  - fbcdn.net
+  - facebook.com
+  - discord.com
+  - discordapp.com
+  - x.com
+  - twitter.com
+  - t.co
+  - twimg.com
+
+# Метка сокета (SO_MARK) для трафика dpi-bypass-direct outbound в sing-box.
+# nftables перехватывает пакеты с этой меткой в OUTPUT → NFQUEUE → nfqws.
+nfqws_routing_mark: 100
+nfqws_queue_num: 1
+
+# Аргументы nfqws — подобрать blockcheck.sh, значения ниже консервативные.
+# Запустить на роутере: wget -O /tmp/bc.sh https://raw.githubusercontent.com/bol-van/zapret/master/blockcheck.sh && chmod +x /tmp/bc.sh && /tmp/bc.sh
+nfqws_args: "--filter-tcp=443 --dpi-desync=disorder2 --dpi-desync-split-pos=2"
+
+# Версия zapret (bol-van/zapret) для скачивания бинаря nfqws.
+# URL: https://github.com/bol-van/zapret/releases/download/v{{ nfqws_version }}/zapret-v{{ nfqws_version }}.tar.gz
+# Проверь актуальный тег: https://github.com/bol-van/zapret/releases
+nfqws_version: "72.1"
