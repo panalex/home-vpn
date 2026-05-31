@@ -30,7 +30,7 @@
     {
       "type": "shadowsocks",
       "tag": "proxy",
-      "server": "{{ hostvars[groups['ru_vps'][0]]['ansible_host'] }}",
+      "server": "{{ _edge_vps_ip }}",
       "server_port": {{ router_ss_port }},
       "method": "{{ router_ss_method }}",
       "password": "{{ router_ss_secret }}"

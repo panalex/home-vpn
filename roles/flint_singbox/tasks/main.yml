@@ -46,6 +46,10 @@
   notify: [reload network, reload firewall, restart sing-box]
 
 # --- config.json: рендер шаблона на control node, заливка как content ---
+- name: resolve edge VPS IP
+  set_fact:
+    _edge_vps_ip: "{{ hostvars[groups['ru_vps'][0]]['ansible_host'] }}"
+
 - name: sing-box config
   community.openwrt.copy:
     content: "{{ lookup('template', 'config.json.j2') }}"
