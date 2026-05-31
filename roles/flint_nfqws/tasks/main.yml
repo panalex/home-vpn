@@ -55,12 +55,12 @@
       community.openwrt.command:
         cmd: >-
           tar -xzf /tmp/zapret.tar.gz -C /tmp
-          zapret-v{{ nfqws_version }}/binaries/linux/aarch64/nfqws
+          zapret-v{{ nfqws_version }}/binaries/linux-arm64/nfqws
 
     - name: install nfqws to /usr/sbin
       community.openwrt.command:
         cmd: >-
-          cp /tmp/zapret-v{{ nfqws_version }}/binaries/linux/aarch64/nfqws
+          cp /tmp/zapret-v{{ nfqws_version }}/binaries/linux-arm64/nfqws
           /usr/sbin/nfqws && chmod 755 /usr/sbin/nfqws
 
     - name: cleanup download
