@@ -1,9 +1,21 @@
 ---
 # === 1. NFQUEUE kernel module ===
-- name: install kmod-nf-queue
+# On GL-MT6000 the module is typically built into the kernel; only install if missing.
+- name: check if nfnetlink_queue module is available
+  community.openwrt.command:
+    cmd: >-
+      grep -qw nfnetlink_queue /proc/modules ||
+      grep -qw nfnetlink_queue /lib/modules/$(uname -r)/modules.builtin 2>/dev/null ||
+      modprobe nfnetlink_queue 2>/dev/null
+  register: _nfq_check
+  changed_when: false
+  failed_when: false
+
+- name: install kmod-nfnetlink-queue
   community.openwrt.apk:
-    name: kmod-nf-queue
+    name: kmod-nfnetlink-queue
     state: present
+  when: _nfq_check.rc != 0
 
 # === 2. Disable MediaTek HW flow offload ===
 # HW offload обходит netfilter — NFQUEUE не видит offload-трафик.
