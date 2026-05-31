@@ -35,6 +35,14 @@
       "tag": "local-http",
       "listen": "{{ ru_singbox_http_bind }}",
       "listen_port": {{ ru_singbox_http_port }}
+    },
+    {
+      "type": "shadowsocks",
+      "tag": "router-in",
+      "listen": "0.0.0.0",
+      "listen_port": {{ router_ss_port }},
+      "method": "{{ router_ss_method }}",
+      "password": "{{ router_ss_secret }}"
     }{% if ru_public_proxy_enable | bool %},
     {
       "type": "socks",
@@ -95,6 +103,7 @@
       "server": "remote-dns"
     },
     "rules": [
+      { "inbound": ["router-in"], "outbound": "de-ss" },
       {
         "ip_cidr": ["{{ hostvars[groups['de_vps'][0]].ansible_host | default(groups['de_vps'][0]) }}/32"],
         "outbound": "direct"

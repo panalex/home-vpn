@@ -23,6 +23,11 @@ singbox_server_password: "REPLACE_ME_BASE64_32_BYTES"
 singbox_server_listen: "0.0.0.0"
 singbox_server_multiplex: true
 
+# --- Router (Flint 2) SS-2022 inbound on edge ---
+router_ss_port: 8388
+router_ss_method: "2022-blake3-aes-256-gcm"
+router_ss_secret: ""   # openssl rand -base64 32 — НЕ переиспользуй secret цепочки :4433
+
 # =============================================================================
 # RU -> sing-box client (relays everything to DE)
 # =============================================================================

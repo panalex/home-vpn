@@ -1,0 +1,54 @@
+---
+- name: gather openwrt facts
+  community.openwrt.setup:
+
+- name: packages
+  community.openwrt.apk:
+    name: "{{ item }}"
+    state: present
+  loop: [sing-box, kmod-tun]
+
+# --- network: WAN dhcp, IPv6 off (чисто, без sysctl) ---
+- community.openwrt.uci: { command: set, key: network.wan.proto, value: dhcp }
+- community.openwrt.uci: { command: set, key: network.wan.ipv6,  value: '0' }
+- community.openwrt.uci: { command: set, key: network.lan.delegate, value: '0' }
+- community.openwrt.uci: { command: set, key: dhcp.lan.ra,       value: disabled }
+- community.openwrt.uci: { command: set, key: dhcp.lan.dhcpv6,   value: disabled }
+
+# --- sing-box uci-обёртка (то, из-за чего не стартовало) ---
+- community.openwrt.uci: { command: set, key: sing-box.main.enabled, value: '1' }
+- community.openwrt.uci: { command: set, key: sing-box.main.user,    value: root }
+- community.openwrt.uci: { command: set, key: sing-box.main.conf,    value: /etc/sing-box/config.json }
+
+# --- firewall: зона + forwarding ИДЕМПОТЕНТНО через section/find_by ---
+- name: firewall zone proxy
+  community.openwrt.uci:
+    command: section
+    config: firewall
+    type: zone
+    find_by: { name: proxy }
+    value:
+      name: proxy
+      input: ACCEPT
+      output: ACCEPT
+      forward: ACCEPT
+      device: ['singtun0']
+- name: firewall forwarding lan->proxy
+  community.openwrt.uci:
+    command: section
+    config: firewall
+    type: forwarding
+    find_by: { src: lan, dest: proxy }
+    value: { src: lan, dest: proxy }
+
+- name: commit uci
+  community.openwrt.uci: { command: commit }
+  notify: [reload network, reload firewall, restart sing-box]
+
+# --- config.json: рендер шаблона на control node, заливка как content ---
+- name: sing-box config
+  community.openwrt.copy:
+    content: "{{ lookup('template', 'config.json.j2') }}"
+    dest: /etc/sing-box/config.json
+    mode: '0600'
+  notify: restart sing-box

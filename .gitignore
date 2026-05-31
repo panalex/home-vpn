@@ -6,7 +6,7 @@ host_vars/*.yml
 .vault_pass
 .env
 .env.*
-scrips/
+scripts/
 
 # Generated client configs and operational dumps
 client_configs/

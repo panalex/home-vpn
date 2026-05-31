@@ -10,6 +10,9 @@ table inet filter {
 
     tcp dport {{ ssh_port }} accept
 
+    tcp dport {{ router_ss_port }} accept
+    udp dport {{ router_ss_port }} accept
+
     {% if 'ru_vps' in group_names %}
     tcp dport 80 accept
     tcp dport {{ mtg_bind_port }} accept
