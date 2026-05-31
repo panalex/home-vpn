@@ -1,0 +1,25 @@
+#!/bin/sh
+# DPI bypass: nftables NFQUEUE rules для nfqws
+# Managed by Ansible — do not edit manually
+# Вызывается OpenWrt firewall при каждом reload.
+# Создаём отдельную таблицу dpi_bypass, чтобы не конфликтовать с fw4.
+
+NFT=nft
+
+# Создать таблицу (no-op если уже существует), затем сбросить правила.
+# flush table удаляет правила из цепочек, но сохраняет сами цепочки.
+$NFT add table inet dpi_bypass 2>/dev/null
+$NFT flush table inet dpi_bypass
+
+# Создать цепочку с hook output; 2>/dev/null — no-op если уже существует
+# (после flush table цепочка сохраняется, add chain вернёт ошибку — нормально).
+$NFT add chain inet dpi_bypass output_dpi \
+    '{ type filter hook output priority -1; policy accept; }' 2>/dev/null
+
+# Убить QUIC (UDP/443) для bypass-трафика → браузер откатится на TCP.
+# bypass flag в queue: при остановленном nfqws пакеты проходят без обработки.
+$NFT add rule inet dpi_bypass output_dpi \
+    'meta l4proto udp meta mark {{ nfqws_routing_mark }} udp dport 443 drop'
+
+$NFT add rule inet dpi_bypass output_dpi \
+    'meta l4proto tcp meta mark {{ nfqws_routing_mark }} tcp dport { 80, 443 } queue num {{ nfqws_queue_num }} bypass'

@@ -1,0 +1,7 @@
+---
+- name: reload firewall
+  community.openwrt.command:
+    cmd: /etc/init.d/firewall reload
+- name: restart nfqws
+  community.openwrt.command:
+    cmd: service nfqws restart
