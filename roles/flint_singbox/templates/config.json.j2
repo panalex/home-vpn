@@ -7,6 +7,7 @@
       { "type": "fakeip","tag": "dns-fakeip", "inet4_range": "198.18.0.0/15", "inet6_range": "fc00::/18" }
     ],
     "rules": [
+      { "domain_suffix": {{ dpi_bypass_domains | to_json }}, "server": "dns-local" },
       { "rule_set": "geosite-ru", "server": "dns-local" },
       { "query_type": ["A", "AAAA"], "server": "dns-fakeip" }
     ],
@@ -29,18 +30,26 @@
     {
       "type": "shadowsocks",
       "tag": "proxy",
-      "server": "192.144.15.31",
-      "server_port": 8388,
-      "method": "2022-blake3-aes-256-gcm",
+      "server": "{{ hostvars[groups['ru_vps'][0]]['ansible_host'] }}",
+      "server_port": {{ router_ss_port }},
+      "method": "{{ router_ss_method }}",
       "password": "{{ router_ss_secret }}"
     },
-    { "type": "direct", "tag": "direct" }
+    { "type": "direct", "tag": "direct" },
+    { "type": "block",  "tag": "block" },
+    {
+      "type": "direct",
+      "tag": "dpi-bypass-direct",
+      "routing_mark": {{ nfqws_routing_mark }}
+    }
   ],
   "route": {
     "rules": [
       { "action": "sniff" },
       { "protocol": "dns", "action": "hijack-dns" },
       { "ip_is_private": true, "outbound": "direct" },
+      { "domain_suffix": {{ dpi_bypass_domains | to_json }}, "network": "udp", "port": 443, "outbound": "block" },
+      { "domain_suffix": {{ dpi_bypass_domains | to_json }}, "outbound": "dpi-bypass-direct" },
       { "rule_set": ["geosite-ru", "geoip-ru"], "outbound": "direct" }
     ],
     "rule_set": [
