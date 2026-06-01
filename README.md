@@ -11,7 +11,9 @@ Ansible-проект для двух VPS и домашнего роутера GL
 - локальный DNS для VPN-клиентов через `unbound` с DoT-forwarding;
 - nftables firewall/NAT для обоих VPS-узлов;
 - единый список пользователей для прокси и VPN;
-- sing-box TUN на роутере GL-MT6000 (OpenWrt): трафик домашней сети прозрачно уходит в gateway через Shadowsocks 2022, российские IP/домены идут напрямую.
+- WDTT-сервер на gateway: WireGuard через VK TURN / DTLS (:56000), позволяет пробить NAT без проброса портов;
+- sing-box TUN на роутере GL-MT6000 (OpenWrt): трафик домашней сети прозрачно уходит в gateway через Shadowsocks 2022, российские IP/домены идут напрямую;
+- `nfqws` (zapret) на роутере: DPI-десинхронизация для сайтов, заблокированных РКН, с прямым выходом через WAN без туннеля.
 
 Репозиторий подготовлен для публичной публикации: реальные IP, домены, пароли, `.git`-история и локальные vars исключены. Перед использованием создайте собственные `inventory.ini` и `group_vars/all.yml` из `.example`-файлов.
 
@@ -32,11 +34,13 @@ flowchart LR
 
     U4 -->|all traffic via TUN| FL
     FL -->|RU IP/domains| NET
+    FL -->|dpi_bypass_domains: direct + nfqws| NET
     FL -->|non-RU: SS2022 :8388| DE
     U2 -->|HTTP proxy auth| RU
     U3 -->|MTProto FakeTLS :443| RU
     RU -->|sing-box chain :4433| DE
     U1 -->|OpenConnect :443 tcp/udp| DE
+    U5[WireGuard clients] -->|DTLS :56000 via VK TURN| DE
     DE --> NET
     DE -->|DoT :853| DNS
 ```
@@ -114,9 +118,11 @@ ansible-playbook -i inventory.ini router.yml
 | `de_singbox` | gateway | ss-in на `:4433`, принимающий цепочку с edge |
 | `de_unbound` | gateway | локальный DNS для VPN-клиентов, DoT upstream |
 | `de_ocserv` | gateway | OpenConnect/AnyConnect VPN, LE-сертификат, VPN route hook |
+| `de_wdtt` | gateway | WireGuard через VK TURN; собирает `wdtt-server` из исходников Go, DTLS `:56000`, WG `:56001`, NAT `10.66.66.0/24` |
 | `users` | gateway | синхронизация `/etc/ocserv/ocpasswd` из `vpn_users` |
 | `firewall` | VPS (оба) | nftables input/forward rules |
 | `flint_singbox` | GL-MT6000 | sing-box TUN (`singtun0`), FakeIP DNS, split-routing по `geoip-ru`/`geosite-ru`, SS2022 outbound на gateway |
+| `flint_nfqws` | GL-MT6000 | DPI-десинхронизация (zapret/nfqws); NFQUEUE перехватывает TCP 80/443 и блокирует QUIC для трафика с `routing_mark={{ nfqws_routing_mark }}` |
 
 ## Важные runtime-особенности
 
@@ -162,4 +168,12 @@ service sing-box status
 ip a show singtun0
 # трафик с домашнего устройства должен выходить через gateway IP:
 curl https://ifconfig.me   # из браузера на LAN
+```
+
+WDTT (gateway):
+
+```bash
+systemctl status wdtt --no-pager
+ss -lntup | grep ':56000'
+# подключение WireGuard-клиента через wdtt-клиент (proxy-turn-vk-android)
 ```

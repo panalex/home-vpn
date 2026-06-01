@@ -17,7 +17,8 @@
 | Логическое имя | Inventory group | Назначение | Основные сервисы |
 |---|---|---|---|
 | Edge VPS | `ru_vps` | публичная точка входа для Telegram и браузерного прокси | nginx, mtg, sing-box |
-| Gateway VPS | `de_vps` | VPN concentrator и внешний egress | ocserv, unbound, sing-box |
+| Gateway VPS | `de_vps` | VPN concentrator, WDTT relay и внешний egress | ocserv, unbound, sing-box, wdtt |
+| Роутер | `routers` | прозрачный proxy для домашней сети + DPI-обход | sing-box TUN, nfqws |
 
 Названия групп исторические. В публичной версии их можно трактовать как `edge_vps` и `gateway_vps`.
 
@@ -53,6 +54,39 @@ sequenceDiagram
     E->>G: Shadowsocks 2022 chain :4433
     G->>I: outbound direct
 ```
+
+### 4. WireGuard client -> WDTT -> Gateway -> Internet
+
+```mermaid
+sequenceDiagram
+    participant W as WireGuard client
+    participant T as VK TURN relay
+    participant D as wdtt-server on gateway :56000
+    participant I as Internet
+
+    W->>T: DTLS to VK TURN servers
+    T->>D: relayed DTLS datagram
+    D->>D: unwrap → WireGuard :56001
+    W->>I: full tunnel via gateway NAT (10.66.66.0/24)
+```
+
+Преимущество: DTLS через публичные TURN-серверы VK пробивает большинство NAT без проброса портов на клиентской стороне.
+
+### 5. Роутер: DPI-обход через nfqws
+
+```mermaid
+sequenceDiagram
+    participant H as Home device
+    participant FL as GL-MT6000
+    participant I as Internet (RKN-blocked site)
+
+    H->>FL: TCP/UDP to blocked domain
+    FL->>FL: sing-box marks packet (routing_mark=100) → dpi-bypass-direct outbound
+    FL->>FL: nftables NFQUEUE → nfqws desync (disorder2)
+    FL->>I: direct WAN (no VPN tunnel)
+```
+
+nfqws перехватывает пакеты с `routing_mark={{ nfqws_routing_mark }}` через NFQUEUE, блокирует QUIC (UDP/443) и десинхронизирует TCP-хэндшейки (disorder2, split). Список доменов задаётся в `dpi_bypass_domains`.
 
 ### 3. Telegram -> Edge mtg -> Gateway -> Telegram
 
@@ -93,15 +127,22 @@ sequenceDiagram
 | 443 | TCP/UDP | public | ocserv | OpenConnect/AnyConnect VPN |
 | 4433 | TCP | public, restricted by firewall | sing-box | ingress с edge-узла |
 | 53 | TCP/UDP | VPN interface | unbound | DNS для VPN-клиентов |
+| 56000 | UDP | public | wdtt-server | WireGuard over DTLS/VK TURN |
+| 56001 | UDP | loopback | wdtt-server | внутренний WireGuard listener |
 
 ## Адресация VPN
 
-По умолчанию:
+По умолчанию (ocserv):
 
 - VPN network: `10.99.0.0/24`
 - gateway/DNS: `10.99.0.1`
 - ocserv device base: `vpns`
 - runtime interface: `vpns0`
+
+WDTT WireGuard:
+
+- subnet: `10.66.66.0/24`
+- пользователи и ключи управляются через `passwords.json` в `{{ wdtt_config_dir }}`; доступны Telegram-команды при наличии бота
 
 Особенность: `vpns0` появляется только после подключения первого клиента. Поэтому постоянный Ansible task вида `ip route replace 10.99.0.0/24 dev vpns0` неидемпотентен на холодном сервере. В проекте маршрут добавляется best-effort hook-скриптом `route-up.sh`, подключенным через `connect-script` в `ocserv.conf`.
 
@@ -139,6 +180,10 @@ Firewall реализован через nftables.
 | ocserv NAT | `roles/de_ocserv/templates/ocserv-nat.nft.j2` |
 | sing-box edge/gateway | `roles/ru_singbox`, `roles/de_singbox` |
 | mtg | `roles/ru_mtg` |
+| wdtt service + NAT | `roles/de_wdtt/templates/wdtt.service.j2`, `wdtt-nat.nft.j2` |
+| wdtt пользователи | `roles/de_wdtt/templates/passwords.json.j2` |
+| nfqws binary + init | `roles/flint_nfqws/tasks/main.yml` (качает zapret с GitHub) |
+| nfqws nftables rules | `roles/flint_nfqws/templates/dpi-bypass.sh.j2` |
 
 ## Что важно показать на интерактивной карте сети
 
@@ -151,6 +196,16 @@ Firewall реализован через nftables.
 5. **Firewall plane** — input, forward, NAT, edge-IP restriction.
 6. **Ansible ownership** — какая роль владеет каким сервисом и файлом.
 7. **Runtime state** — `vpns0` появляется только при подключенном клиенте.
+
+## Маршрутизация на роутере: три категории
+
+| Категория | Правило | Выход |
+|---|---|---|
+| RU IP / geosite-ru | sing-box `geoip:ru`, `geosite:ru` | прямой WAN (без туннеля) |
+| `dpi_bypass_domains` | sing-box → `dpi-bypass-direct` outbound с `routing_mark` | прямой WAN + nfqws NFQUEUE десинхронизация |
+| всё остальное | sing-box → SS2022 outbound | туннель до gateway VPS |
+
+`dpi_bypass_domains` и `nfqws_routing_mark` задаются в `group_vars/all.yml`.
 
 ## Потенциальные доработки
 
