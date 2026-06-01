@@ -89,7 +89,7 @@
     GOPATH: /tmp/wdtt-gopath
     GOCACHE: /tmp/wdtt-gocache
     HOME: /root
-  when: wdtt_git is changed
+  when: wdtt_git is changed or not wdtt_binary.stat.exists
   register: wdtt_build
   notify: Restart wdtt
 
