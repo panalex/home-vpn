@@ -69,6 +69,15 @@
     group: root
     mode: '0700'
 
+- name: Deploy initial passwords.json (skip if already exists)
+  ansible.builtin.template:
+    src: passwords.json.j2
+    dest: "{{ wdtt_config_dir }}/passwords.json"
+    owner: root
+    group: root
+    mode: '0600'
+    force: false
+
 - name: Build wdtt-server binary
   ansible.builtin.command:
     cmd: /usr/local/go/bin/go build -ldflags="-s -w" -o /usr/local/bin/wdtt-server .
