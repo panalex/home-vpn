@@ -10,4 +10,4 @@ wdtt_password: ""
 wdtt_telegram_admin: ""
 wdtt_telegram_bot_token: ""
 
-wdtt_egress_interface: "{{ ansible_default_ipv4.interface }}"
+wdtt_egress_interface: "{{ ansible_facts['default_ipv4']['interface'] }}"
