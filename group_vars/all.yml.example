@@ -107,7 +107,6 @@ wdtt_config_dir: /etc/wdtt
 # Мастер-пароль для первого пользователя (владельца). Сгенерировать:
 #   LC_ALL=C tr -dc 'A-Za-z0-9_@%+=:.,-' </dev/urandom | head -c 32; echo
 wdtt_password: "REPLACE_ME_MASTER_PASSWORD"
-wdtt_password_tun: "<tunnel password>"
 # Опционально: Telegram-бот для управления паролями пользователей
 wdtt_telegram_admin: ""   # ID пользователя Telegram (числовой)
 wdtt_telegram_bot_token: ""

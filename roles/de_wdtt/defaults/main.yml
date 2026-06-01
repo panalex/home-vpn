@@ -9,6 +9,5 @@ wdtt_config_dir: /etc/wdtt
 wdtt_password: ""
 wdtt_telegram_admin: ""
 wdtt_telegram_bot_token: ""
-wdtt_password_tun: ""
 
 wdtt_egress_interface: "{{ ansible_facts['default_ipv4']['interface'] }}"
