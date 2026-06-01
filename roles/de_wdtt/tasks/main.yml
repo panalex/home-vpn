@@ -78,6 +78,20 @@
     mode: '0600'
     force: false
 
+- name: Tidy Go modules (update go.sum)
+  ansible.builtin.command:
+    cmd: /usr/local/go/bin/go mod tidy
+    chdir: /tmp/wdtt-src
+  environment:
+    GOOS: linux
+    GOARCH: "{{ wdtt_go_arch }}"
+    CGO_ENABLED: "0"
+    GOPATH: /tmp/wdtt-gopath
+    GOCACHE: /tmp/wdtt-gocache
+    HOME: /root
+  when: wdtt_git is changed or not wdtt_binary.stat.exists
+  changed_when: false
+
 - name: Build wdtt-server binary
   ansible.builtin.command:
     cmd: /usr/local/go/bin/go build -ldflags="-s -w" -o /usr/local/bin/wdtt-server .
