@@ -1,7 +1,7 @@
 ---
 - name: Set wdtt Go architecture
   ansible.builtin.set_fact:
-    wdtt_go_arch: "{{ singbox_arch_map[ansible_architecture] | default('amd64') }}"
+    wdtt_go_arch: "{{ singbox_arch_map[ansible_facts['architecture']] | default('amd64') }}"
 
 - name: Install build dependencies
   ansible.builtin.apt:
