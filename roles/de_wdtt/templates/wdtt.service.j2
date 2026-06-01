@@ -1,0 +1,23 @@
+[Unit]
+Description=WDTT — WireGuard over TURN Tunnel server
+After=network-online.target nftables.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/wdtt-server \
+  -listen 0.0.0.0:{{ wdtt_dtls_port }} \
+  -wg-port {{ wdtt_wg_port }} \
+  -config-dir {{ wdtt_config_dir }} \
+  -password {{ wdtt_password }}{% if wdtt_telegram_admin %} \
+  -admin {{ wdtt_telegram_admin }}{% endif %}{% if wdtt_telegram_bot_token %} \
+  -bot-token {{ wdtt_telegram_bot_token }}{% endif %}
+
+Restart=on-failure
+RestartSec=5
+
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,13 @@
+---
+wdtt_version: "v1.2.2"
+wdtt_go_version: "1.25.0"
+
+wdtt_dtls_port: 56000
+wdtt_wg_port: 56001
+wdtt_config_dir: /etc/wdtt
+
+wdtt_password: ""
+wdtt_telegram_admin: ""
+wdtt_telegram_bot_token: ""
+
+wdtt_egress_interface: "{{ ansible_default_ipv4.interface }}"

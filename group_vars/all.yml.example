@@ -97,6 +97,25 @@ vpn_users:
 proxy_users: "{{ vpn_users }}"
 
 # =============================================================================
+# WDTT — WireGuard over TURN Tunnel (Android → VK TURN servers → DE VPS)
+# Клиент: https://github.com/amurcanov/proxy-turn-vk-android
+# Порт 56000/udp открыт публично; 56001/udp — внутренний WireGuard.
+# =============================================================================
+wdtt_dtls_port: 56000
+wdtt_wg_port: 56001
+wdtt_config_dir: /etc/wdtt
+# Мастер-пароль для первого пользователя (владельца). Сгенерировать:
+#   LC_ALL=C tr -dc 'A-Za-z0-9_@%+=:.,-' </dev/urandom | head -c 32; echo
+wdtt_password: "REPLACE_ME_MASTER_PASSWORD"
+# Опционально: Telegram-бот для управления паролями пользователей
+wdtt_telegram_admin: ""   # ID пользователя Telegram (числовой)
+wdtt_telegram_bot_token: ""
+# Версия тега из https://github.com/amurcanov/proxy-turn-vk-android/releases
+wdtt_version: "v1.2.2"
+# Версия Go для сборки; должна соответствовать go.mod (>= 1.25.0)
+wdtt_go_version: "1.25.0"
+
+# =============================================================================
 # SSH
 # =============================================================================
 ssh_port: 22

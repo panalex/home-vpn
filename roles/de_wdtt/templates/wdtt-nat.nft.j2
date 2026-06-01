@@ -1,0 +1,9 @@
+#!/usr/sbin/nft -f
+# Managed by Ansible — masquerade for wdtt WireGuard clients (10.66.66.0/24)
+
+table ip wdtt_nat {
+    chain postrouting {
+        type nat hook postrouting priority 100;
+        ip saddr 10.66.66.0/24 oifname "{{ wdtt_egress_interface }}" masquerade
+    }
+}

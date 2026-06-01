@@ -33,6 +33,10 @@ table inet filter {
     iifname "{{ ocserv_vpn_interface | default('vpns0') }}" tcp dport 53 accept
     # legacy chain inbound from RU only
     ip saddr {{ hostvars[groups['ru_vps'][0]].ansible_host | default(groups['ru_vps'][0]) }}/32 tcp dport {{ singbox_server_port }} accept
+    {% if wdtt_dtls_port is defined %}
+    # wdtt: DTLS endpoint for VK TURN tunnel clients
+    udp dport {{ wdtt_dtls_port }} accept
+    {% endif %}
     {% endif %}
 
     ip protocol icmp accept
@@ -46,6 +50,11 @@ table inet filter {
     # ocserv VPN client forwarding
     iifname "{{ ocserv_vpn_interface | default('vpns0') }}" oifname "{{ ocserv_egress_interface | default('eth0') }}" accept
     iifname "{{ ocserv_egress_interface | default('eth0') }}" oifname "{{ ocserv_vpn_interface | default('vpns0') }}" ct state established,related accept
+    {% endif %}
+    {% if 'de_vps' in group_names and wdtt_dtls_port is defined %}
+    # wdtt WireGuard (wdtt0) client forwarding
+    iifname "wdtt0" oifname "{{ ocserv_egress_interface | default('eth0') }}" accept
+    iifname "{{ ocserv_egress_interface | default('eth0') }}" oifname "wdtt0" ct state established,related accept
     {% endif %}
   }
 

@@ -16,6 +16,8 @@
       tags: [de_singbox, de, singbox]
     - role: de_ocserv
       tags: [de_ocserv, de, ocserv, vpn]
+    - role: de_wdtt
+      tags: [de_wdtt, de, wdtt]
     - role: firewall
       tags: [firewall, de]
 

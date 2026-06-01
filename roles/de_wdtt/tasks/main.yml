@@ -1,0 +1,136 @@
+---
+- name: Set wdtt Go architecture
+  ansible.builtin.set_fact:
+    wdtt_go_arch: "{{ singbox_arch_map[ansible_architecture] | default('amd64') }}"
+
+- name: Install build dependencies
+  ansible.builtin.apt:
+    name:
+      - git
+      - iptables
+    state: present
+    update_cache: false
+
+- name: Check installed Go version
+  ansible.builtin.command: /usr/local/go/bin/go version
+  register: go_installed
+  changed_when: false
+  failed_when: false
+
+- name: Install Go {{ wdtt_go_version }}
+  when: go_installed.rc != 0 or ('go' + wdtt_go_version) not in go_installed.stdout
+  block:
+    - name: Download Go {{ wdtt_go_version }}
+      ansible.builtin.get_url:
+        url: "https://go.dev/dl/go{{ wdtt_go_version }}.linux-{{ wdtt_go_arch }}.tar.gz"
+        dest: "/tmp/go{{ wdtt_go_version }}.linux-{{ wdtt_go_arch }}.tar.gz"
+        mode: '0644'
+
+    - name: Remove previous Go installation
+      ansible.builtin.file:
+        path: /usr/local/go
+        state: absent
+
+    - name: Extract Go {{ wdtt_go_version }}
+      ansible.builtin.unarchive:
+        src: "/tmp/go{{ wdtt_go_version }}.linux-{{ wdtt_go_arch }}.tar.gz"
+        dest: /usr/local
+        remote_src: true
+
+- name: Check installed wdtt binary
+  ansible.builtin.stat:
+    path: /usr/local/bin/wdtt-server
+  register: wdtt_binary
+
+- name: Check installed wdtt build version
+  ansible.builtin.slurp:
+    src: "{{ wdtt_config_dir }}/.build_version"
+  register: wdtt_installed_version
+  failed_when: false
+
+- name: Clone wdtt source ({{ wdtt_version }})
+  ansible.builtin.git:
+    repo: "https://github.com/amurcanov/proxy-turn-vk-android.git"
+    dest: /tmp/wdtt-src
+    version: "{{ wdtt_version }}"
+    force: true
+    depth: 1
+  when: >
+    not wdtt_binary.stat.exists or
+    wdtt_installed_version.content is not defined or
+    (wdtt_installed_version.content | b64decode | trim) != wdtt_version
+  register: wdtt_git
+
+- name: Ensure wdtt config directory exists
+  ansible.builtin.file:
+    path: "{{ wdtt_config_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Build wdtt-server binary
+  ansible.builtin.command:
+    cmd: /usr/local/go/bin/go build -ldflags="-s -w" -o /usr/local/bin/wdtt-server .
+    chdir: /tmp/wdtt-src
+  environment:
+    GOOS: linux
+    GOARCH: "{{ wdtt_go_arch }}"
+    CGO_ENABLED: "0"
+    GOPATH: /tmp/wdtt-gopath
+    GOCACHE: /tmp/wdtt-gocache
+    HOME: /root
+  when: wdtt_git is changed
+  register: wdtt_build
+  notify: Restart wdtt
+
+- name: Record installed build version
+  ansible.builtin.copy:
+    content: "{{ wdtt_version }}"
+    dest: "{{ wdtt_config_dir }}/.build_version"
+    mode: '0644'
+  when: wdtt_build is changed
+
+- name: Ensure /etc/nftables.d exists
+  ansible.builtin.file:
+    path: /etc/nftables.d
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Deploy wdtt NAT rules
+  ansible.builtin.template:
+    src: wdtt-nat.nft.j2
+    dest: /etc/nftables.d/wdtt-nat.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Apply nftables
+
+- name: Enable IPv4 forwarding
+  ansible.posix.sysctl:
+    name: net.ipv4.ip_forward
+    value: '1'
+    state: present
+    sysctl_file: /etc/sysctl.d/99-ocserv.conf
+    reload: true
+
+- name: Deploy wdtt systemd service
+  ansible.builtin.template:
+    src: wdtt.service.j2
+    dest: /etc/systemd/system/wdtt.service
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart wdtt
+
+- name: Flush handlers
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start wdtt
+  ansible.builtin.systemd:
+    name: wdtt
+    enabled: true
+    state: started
+    daemon_reload: true
