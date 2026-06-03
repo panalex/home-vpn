@@ -1,0 +1,13 @@
+---
+# RU DNS over TLS — анти-спуфинг для заблокированных доменов.
+# Plain UDP:53 РКН/ТСПУ подделывают на пути (instagram/facebook/discord),
+# из-за чего desync-категория получала бы отравленный IP. DoT по IP шифрует
+# ответ и не требует bootstrap-резолва. IP остаётся RU → CDN отдаёт ближний узел.
+ru_dns_dot_ip:  "77.88.8.8"
+ru_dns_dot_sni: "common.dot.dns.yandex.net"
+
+# Watchdog вместо жёсткого kill-switch (для домашней сети — fail-open).
+# При падении тоннеля sing-box жив → RU/zapret работают, геоблок-категория
+# отваливается сама (app-level fail-closed, без утечки). Watchdog страхует лишь
+# редкий краш самого процесса: cron раз в минуту поднимает sing-box обратно.
+router_singbox_watchdog: true

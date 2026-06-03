@@ -5,3 +5,5 @@
   community.openwrt.command: { cmd: /etc/init.d/firewall reload }
 - name: restart sing-box
   community.openwrt.command: { cmd: service sing-box restart }
+- name: restart cron
+  community.openwrt.command: { cmd: /etc/init.d/cron restart }

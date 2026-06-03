@@ -123,7 +123,7 @@ ansible-playbook -i inventory.ini router.yml
 | `de_wdtt` | gateway | WireGuard через VK TURN; собирает `wdtt-server` из исходников Go, DTLS `:56000`, WG `:56001`, NAT `10.66.66.0/24` |
 | `users` | gateway | синхронизация `/etc/ocserv/ocpasswd` из `vpn_users` |
 | `firewall` | VPS (оба) | nftables input/forward rules |
-| `flint_singbox` | GL-MT6000 | sing-box TUN (`singtun0`), FakeIP DNS, split-routing по `geoip-ru`/`geosite-ru`, SS2022 outbound на gateway |
+| `flint_singbox` | GL-MT6000 | sing-box TUN (`singtun0`), split-DNS (RU/блок-домены → Яндекс **DoT**, иностранные → DoH через туннель, FakeIP), split-routing по `geoip-ru`/`geosite-ru`, SS2022 outbound на gateway, cron-watchdog + `mtu_fix` |
 | `flint_nfqws` | GL-MT6000 | DPI-десинхронизация (zapret/nfqws); NFQUEUE перехватывает TCP 80/443 и блокирует QUIC для трафика с `routing_mark={{ nfqws_routing_mark }}` |
 
 ## Важные runtime-особенности

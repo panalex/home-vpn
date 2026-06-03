@@ -44,7 +44,7 @@ Two VPS nodes + one GL-MT6000 router, deployed via two playbooks: `site.yml` (VP
 
 **Gateway VPS** (`de_vps`): egress + VPN concentrator. Runs `ocserv` (OpenConnect/AnyConnect VPN on :443 TCP/UDP), `unbound` (DNS for VPN clients via DoT), `sing-box` (ss-in :4433, restricted by firewall to edge IP only). VPN subnet: `10.99.0.0/24`, DNS: `10.99.0.1`.
 
-**Router** (`routers`): GL-MT6000 with OpenWrt + `sing-box` TUN (`singtun0`). FakeIP DNS + split routing: RU IPs/domains go direct, everything else tunnels to gateway via SS2022 :8388.
+**Router** (`routers`): GL-MT6000 with OpenWrt + `sing-box` TUN (`singtun0`). FakeIP DNS + split routing: RU IPs/domains go direct, everything else tunnels to gateway via SS2022 :8388. Split-DNS: RU/blocked domains resolve via Yandex **DoT** (`dns-local`, anti-spoofing); foreign domains resolve via DoH over the tunnel (`dns-remote`, `detour: proxy`). A cron watchdog (`/usr/bin/singbox-watchdog`) restarts `sing-box` if the process dies.
 
 ## Key design decisions
 
@@ -58,6 +58,10 @@ Two VPS nodes + one GL-MT6000 router, deployed via two playbooks: `site.yml` (VP
 
 **unbound DNSSEC fix**: Removes Ubuntu's conflicting `root-auto-trust-anchor-file.conf` and uses `trust-anchor-file: "/usr/share/dns/root.key"` explicitly.
 
+**Router RU DNS over TLS**: `dns-local` uses Yandex DoT by IP (`type: tls`, `server: 77.88.8.8`, `server_name: common.dot.dns.yandex.net`, `detour: direct`) instead of plain UDP:53. RKN/TSPU spoof plain DNS responses for blocked domains (instagram/facebook/discord) on-path; a poisoned IP would send nfqws desync packets into a blackhole. DoT by IP is spoof-proof and needs no bootstrap; the RU location still yields a directly-reachable CDN node.
+
+**Router fail-open + watchdog (no hard kill-switch)**: a hard kill-switch was rejected for a home network. Tunnel-down ≠ sing-box-down: while sing-box is alive, `direct`/`dpi-bypass-direct` (RU + zapret) keep working and only the `final: proxy` (geo-blocked) category fails — and it fails closed at the app level (no leak), no firewall rule needed. The only leak window is a rare process crash, which a 1-minute cron watchdog (`router_singbox_watchdog`) recovers automatically. `mtu_fix: '1'` on the `proxy` zone clamps MSS for TCP inside the tunnel.
+
 **tgproxy gost bridge**: nginx cannot `proxy_pass` via SOCKS5 natively. `gost` (single static binary) listens on `127.0.0.1:9443` and dials `api.telegram.org:443` through sing-box SOCKS `127.0.0.1:1081`. nginx uses `proxy_ssl_server_name on` + `proxy_ssl_name api.telegram.org` so that TLS SNI is correct even though the TCP connection goes to localhost. mtg domain-fronting forwards all non-Telegram :443 traffic to `127.0.0.1:8443` as raw TCP; nginx does SNI-based virtual hosting there, so no firewall changes are needed.
 
 ## Variables
@@ -69,6 +73,8 @@ All secrets and host-specific config live in `group_vars/all.yml` (gitignored). 
 - `ocserv_domain` / `ocserv_acme_email` — gateway domain (must resolve to gateway IP before first run)
 - `tgproxy_domain` — subdomain for Telegram API reverse proxy (default: `tapi.home12.ru`; must resolve to edge IP before first run)
 - `gost_version` — gost v2 binary version (default in role: `2.11.5`)
+- `ru_dns_dot_ip` / `ru_dns_dot_sni` — router RU DNS-over-TLS upstream (defaults in `flint_singbox/defaults`: `77.88.8.8` / `common.dot.dns.yandex.net`)
+- `router_singbox_watchdog` — enable the cron watchdog that restarts router `sing-box` on crash (default in role: `true`)
 
 ## Post-deploy verification
 
@@ -90,12 +96,15 @@ curl https://tapi.home12.ru/bot<TOKEN>/getMe
 Router:
 ```bash
 service sing-box status && ip a show singtun0
+nslookup instagram.com 127.0.0.1          # blocked domain → real CDN IP, not an RKN stub (DoT works)
+crontab -l | grep singbox-watchdog         # watchdog installed
+uci show firewall | grep mtu_fix           # MSS clamp on proxy zone
 ```
 
 ## Known gaps (from docs/architecture.md)
 
 - Secrets are plaintext in `group_vars/all.yml` — no Ansible Vault or SOPS yet
-- No healthchecks (ocserv login test, DNS-through-VPN test, proxy egress IP)
+- No healthchecks (ocserv login test, DNS-through-VPN test, proxy egress IP) — only the router `sing-box` has a process watchdog
 - IPv6 is disabled globally (`common_disable_ipv6: true`), not routed
 - No rate limiting on public proxy endpoints
 - No fail2ban/dynamic nftables sets for SSH/ocserv brute-force

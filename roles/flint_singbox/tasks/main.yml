@@ -32,6 +32,7 @@
       input: ACCEPT
       output: ACCEPT
       forward: ACCEPT
+      mtu_fix: '1'
       device: ['singtun0']
 - name: firewall forwarding lan->proxy
   community.openwrt.uci:
@@ -56,3 +57,32 @@
     dest: /etc/sing-box/config.json
     mode: '0600'
   notify: restart sing-box
+
+# --- watchdog: автоперезапуск sing-box при падении процесса (fail-open) ---
+# Мягкая страховка вместо жёсткого kill-switch: тоннель-down переживается сам
+# (RU/zapret работают, геоблок отваливается без утечки), а краш процесса
+# поднимается cron'ом раз в минуту.
+- name: install sing-box watchdog script
+  community.openwrt.copy:
+    content: |
+      #!/bin/sh
+      # Managed by Ansible — поднять sing-box, если процесс умер.
+      pidof sing-box >/dev/null 2>&1 || /etc/init.d/sing-box restart
+    dest: /usr/bin/singbox-watchdog
+    mode: '0755'
+  when: router_singbox_watchdog | bool
+
+- name: install watchdog cron entry
+  community.openwrt.command:
+    cmd: >-
+      grep -q singbox-watchdog /etc/crontabs/root 2>/dev/null ||
+      { echo '* * * * * /usr/bin/singbox-watchdog' >> /etc/crontabs/root; echo CHANGED; }
+  register: _wd_cron
+  changed_when: "'CHANGED' in _wd_cron.stdout"
+  when: router_singbox_watchdog | bool
+  notify: restart cron
+
+- name: enable cron on boot
+  community.openwrt.command: { cmd: /etc/init.d/cron enable }
+  when: router_singbox_watchdog | bool
+  changed_when: false

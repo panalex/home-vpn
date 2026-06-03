@@ -184,6 +184,8 @@ Firewall реализован через nftables.
 | wdtt пользователи | `roles/de_wdtt/templates/passwords.json.j2` |
 | nfqws binary + init | `roles/flint_nfqws/tasks/main.yml` (качает zapret с GitHub) |
 | nfqws nftables rules | `roles/flint_nfqws/templates/dpi-bypass.sh.j2` |
+| router sing-box config (split-DNS/routing) | `roles/flint_singbox/templates/config.json.j2` |
+| router DNS DoT + watchdog vars | `roles/flint_singbox/defaults/main.yml` |
 
 ## Что важно показать на интерактивной карте сети
 
@@ -207,11 +209,25 @@ Firewall реализован через nftables.
 
 `dpi_bypass_domains` и `nfqws_routing_mark` задаются в `group_vars/all.yml`.
 
+### Split-DNS на роутере
+
+| Категория доменов | Резолвер | Транспорт |
+|---|---|---|
+| `dpi_bypass_domains` + `geosite-ru` | `dns-local` — Яндекс DoT (`77.88.8.8`, `detour: direct`) | DoT, RU-локация |
+| всё остальное | `dns-remote` — Cloudflare DoH (`detour: proxy`) | DoH через туннель DE |
+| A/AAAA (по умолчанию) | `dns-fakeip` | FakeIP `198.18.0.0/15` |
+
+RU- и заблокированные домены резолвятся через **DoT** (а не plain UDP:53): РКН/ТСПУ подделывают открытые DNS-ответы для заблокированных доменов на пути, и отравленный IP отправил бы desync-пакеты nfqws в чёрную дыру. DoT по IP спуф-устойчив и не требует bootstrap-резолва; RU-локация даёт ближайший достижимый CDN-узел. Иностранные домены резолвятся DoH через туннель, поэтому CDN отдаёт корректные не-RU узлы. `ru_dns_dot_ip` / `ru_dns_dot_sni` — в `flint_singbox/defaults`.
+
+### Отказоустойчивость роутера
+
+Жёсткий kill-switch сознательно **не** используется (домашняя сеть). Падение туннеля ≠ падение sing-box: при живом процессе RU/zapret-категории работают, а геоблок-категория (`final: proxy`) отваливается сама на уровне приложения без утечки RU-IP. Единственное окно утечки — редкий краш процесса; его страхует cron-watchdog (`/usr/bin/singbox-watchdog`, раз в минуту), включаемый `router_singbox_watchdog`. На зоне `proxy` стоит `mtu_fix` (MSS-clamp для TCP внутри туннеля).
+
 ## Потенциальные доработки
 
 - Перейти с открытых паролей в `group_vars/all.yml` на Ansible Vault или SOPS.
 - Разделить `vpn_users` и `proxy_users`, если появятся разные политики доступа.
-- Добавить healthchecks: ocserv login test, DNS test через VPN, proxy egress IP test, mtg doctor.
+- Добавить healthchecks: ocserv login test, DNS test через VPN, proxy egress IP test, mtg doctor (на роутере sing-box уже есть cron-watchdog).
 - Добавить backup/restore для `/etc/ocserv/ocpasswd` и `/etc/mtg/secret`.
 - Явно описать IPv6-политику: disabled, routed или filtered.
 - Добавить rate limiting для публичных proxy endpoints.

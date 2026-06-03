@@ -28,6 +28,15 @@ router_ss_port: 8388
 router_ss_method: "2022-blake3-aes-256-gcm"
 router_ss_secret: ""   # openssl rand -base64 32 — НЕ переиспользуй secret цепочки :4433
 
+# --- Router DNS / отказоустойчивость ---
+# RU DNS over TLS: анти-спуфинг для заблокированных доменов (instagram/discord/...).
+# Plain UDP:53 РКН подделывает на пути → desync получал бы отравленный IP.
+ru_dns_dot_ip:  "77.88.8.8"
+ru_dns_dot_sni: "common.dot.dns.yandex.net"
+# Cron-watchdog (раз в минуту) поднимает sing-box при падении процесса.
+# Мягкая замена жёсткого kill-switch: тоннель-down переживается сам, без утечки.
+router_singbox_watchdog: true
+
 # =============================================================================
 # RU -> sing-box client (relays everything to DE)
 # =============================================================================
