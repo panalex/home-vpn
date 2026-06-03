@@ -1,0 +1,9 @@
+---
+# fwmark, которым nfqws метит свои инжектируемые десинк-пакеты
+# (опция --dpi-desync-fwmark, это её встроенный дефолт). dpi-bypass.sh по этой
+# метке вешает `ip rule` (pref 8000 → main table), чтобы raw-пакеты nfqws уходили
+# в WAN напрямую, а не утягивались auto_route sing-box в тоннель (иначе nfqws
+# падает с "rawsend: sendto: Operation not permitted").
+# Переопределяется в group_vars/all.yml; синхронизируй с --dpi-desync-fwmark,
+# если меняешь его в nfqws_args.
+nfqws_fwmark: "0x40000000"

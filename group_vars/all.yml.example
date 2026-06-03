@@ -167,9 +167,19 @@ dpi_bypass_domains:
 nfqws_routing_mark: 100
 nfqws_queue_num: 1
 
-# Аргументы nfqws — подобрать blockcheck.sh, значения ниже консервативные.
-# Запустить на роутере: wget -O /tmp/bc.sh https://raw.githubusercontent.com/bol-van/zapret/master/blockcheck.sh && chmod +x /tmp/bc.sh && /tmp/bc.sh
-nfqws_args: "--filter-tcp=443 --dpi-desync=disorder2 --dpi-desync-split-pos=2"
+# fwmark, которым nfqws метит СВОИ инжектируемые десинк-пакеты (опция nfqws
+# --dpi-desync-fwmark, это её дефолт). dpi-bypass.sh по этой метке добавляет
+# ip rule (pref 8000 → main table), чтобы raw-пакеты nfqws уходили в WAN напрямую,
+# а не утягивались auto_route sing-box в тоннель (иначе "sendto: Operation not
+# permitted"). Если переопределяешь --dpi-desync-fwmark в nfqws_args — синхронизируй тут.
+nfqws_fwmark: "0x40000000"
+
+# Аргументы nfqws — подобрать под свой ISP/TSPU перебором стратегий (blockcheck.sh
+# запускать из ПОЛНОГО релиза zapret, а не одним файлом, иначе ошибка common/base.sh;
+# либо быстрый curl-перебор стратегий прямо на роутере).
+# Значение ниже (multidisorder, file-free, без google-payload) подобрано под RU TSPU
+# и покрывает youtube/instagram/facebook/discord/x. На другом ISP может потребоваться иное.
+nfqws_args: "--filter-tcp=443 --dpi-desync=multidisorder --dpi-desync-split-pos=1,midsld,host+1,sld+2"
 
 # Версия zapret (bol-van/zapret) для скачивания бинаря nfqws.
 # URL: https://github.com/bol-van/zapret/releases/download/v{{ nfqws_version }}/zapret-v{{ nfqws_version }}.tar.gz

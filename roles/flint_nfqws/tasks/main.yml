@@ -17,22 +17,55 @@
     state: present
   when: _nfq_check.rc != 0
 
-# === 2. Disable MediaTek HW flow offload ===
-# HW offload обходит netfilter — NFQUEUE не видит offload-трафик.
-# SW offload оставляем как есть (влияния на nfqws нет).
+# === 1b. nftables NFQUEUE *expression* module ===
+# kmod-nft-queue даёт выражение `queue num` в самом nftables — это ОТДЕЛЬНЫЙ модуль
+# от nfnetlink_queue (которым к очереди цепляется nfqws). Без него правило
+# `... tcp dport {80,443} queue num N` молча НЕ загружается при reload firewall:
+# соседнее `... udp ... drop` грузится, а queue-строка отваливается. Симптом —
+# трафик метится mark=100 и уходит мимо nfqws напрямую (DPI режет, десинк не применяется).
+- name: check if nft_queue module is available
+  community.openwrt.command:
+    cmd: >-
+      grep -qw nft_queue /proc/modules ||
+      grep -qw nft_queue /lib/modules/$(uname -r)/modules.builtin 2>/dev/null ||
+      modprobe nft_queue 2>/dev/null
+  register: _nft_queue_check
+  changed_when: false
+  failed_when: false
+
+- name: install kmod-nft-queue
+  community.openwrt.apk:
+    name: kmod-nft-queue
+    state: present
+  when: _nft_queue_check.rc != 0
+  notify: reload firewall
+
+# === 2. Disable MediaTek flow offload (SW + HW) ===
+# Flow offloading шунтирует netfilter: offload-нутые соединения минуют NFQUEUE,
+# а raw-пакеты, которые инжектит nfqws, получают EPERM
+# ("rawsend: sendto: Operation not permitted"). Для работы nfqws ОБЕ разновидности
+# offload должны быть выключены — программный offload тоже ломает десинк, не только HW.
+- name: disable software flow offloading
+  community.openwrt.uci:
+    command: set
+    key: firewall.@defaults[0].flow_offloading
+    value: '0'
+  register: _offload_sw_change
+
 - name: disable hw flow offloading
   community.openwrt.uci:
     command: set
     key: firewall.@defaults[0].flow_offloading_hw
     value: '0'
   when: flint_disable_hw_offload | bool
-  register: _offload_change
+  register: _offload_hw_change
 
 - name: commit firewall uci
   community.openwrt.uci:
     command: commit
     config: firewall
-  when: _offload_change is changed
+  when: _offload_sw_change is changed or _offload_hw_change is changed
+  notify: reload firewall
 
 # === 3. Install nfqws binary ===
 - name: check installed nfqws version

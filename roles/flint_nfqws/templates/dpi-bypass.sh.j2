@@ -6,6 +6,11 @@
 
 NFT=nft
 
+# На boot модуль nft_queue может быть ещё не загружен, и autoload из контекста fw4
+# не срабатывает — тогда строка с `queue num` молча отваливается (грузится только
+# соседний `drop`), и трафик уходит мимо nfqws. Грузим модуль явно до добавления правил.
+modprobe nft_queue 2>/dev/null
+
 # Создать таблицу (no-op если уже существует), затем сбросить правила.
 # flush table удаляет правила из цепочек, но сохраняет сами цепочки.
 $NFT add table inet dpi_bypass 2>/dev/null
@@ -23,3 +28,13 @@ $NFT add rule inet dpi_bypass output_dpi \
 
 $NFT add rule inet dpi_bypass output_dpi \
     'meta l4proto tcp meta mark {{ nfqws_routing_mark }} tcp dport { 80, 443 } queue num {{ nfqws_queue_num }} bypass'
+
+# --- Маршрутизация инжектируемых nfqws пакетов мимо тоннеля sing-box ---
+# sing-box auto_route policy-routing'ом (ip rule pref ~9000) заворачивает ВЕСЬ
+# локальный трафик (iif lo) в singtun0. Десинк-пакеты, которые nfqws шлёт через
+# raw-сокет, помечены его fwmark (--dpi-desync-fwmark, default {{ nfqws_fwmark }}),
+# но без явного ip rule они тоже утягиваются в TUN и дропаются strict_route →
+# "rawsend: sendto: Operation not permitted". Добавляем правило ВЫШЕ sing-box
+# (pref < 9000): трафик с этой меткой идёт в main-таблицу → напрямую в WAN.
+ip rule del fwmark {{ nfqws_fwmark }}/{{ nfqws_fwmark }} lookup main pref 8000 2>/dev/null
+ip rule add fwmark {{ nfqws_fwmark }}/{{ nfqws_fwmark }} lookup main pref 8000
