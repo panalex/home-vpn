@@ -72,11 +72,15 @@
     mode: '0755'
   when: router_singbox_watchdog | bool
 
+# community.openwrt.command exec'ит argv напрямую, без shell — поэтому пайпы,
+# ||, { } и редиректы надо явно прогонять через /bin/sh -c. Заодно создаём
+# /etc/crontabs/root: на свежем роутере файла ещё нет (busybox crond).
 - name: install watchdog cron entry
   community.openwrt.command:
     cmd: >-
+      /bin/sh -c "mkdir -p /etc/crontabs;
       grep -q singbox-watchdog /etc/crontabs/root 2>/dev/null ||
-      { echo '* * * * * /usr/bin/singbox-watchdog' >> /etc/crontabs/root; echo CHANGED; }
+      { echo '* * * * * /usr/bin/singbox-watchdog' >> /etc/crontabs/root; echo CHANGED; }"
   register: _wd_cron
   changed_when: "'CHANGED' in _wd_cron.stdout"
   when: router_singbox_watchdog | bool
