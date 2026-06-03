@@ -40,7 +40,7 @@ ansible-playbook -i inventory.ini site.yml --tags de_ocserv --check --diff
 
 Two VPS nodes + one GL-MT6000 router, deployed via two playbooks: `site.yml` (VPS) and `router.yml` (OpenWrt).
 
-**Edge VPS** (`ru_vps`): public ingress. Runs nginx (TLS fronting/ACME), `mtg` (Telegram MTProto FakeTLS on :443), `sing-box` (HTTP proxy :2080, SOCKS :2081 with auth, local loopback :1080/:1081 for mtg). All proxy traffic chains to gateway via Shadowsocks 2022 on :4433.
+**Edge VPS** (`ru_vps`): public ingress. Runs nginx (TLS fronting/ACME), `mtg` (Telegram MTProto FakeTLS on :443), `sing-box` (HTTP proxy :2080, SOCKS :2081 with auth, local loopback :1080/:1081 for mtg), `gost-tgproxy` (TCP bridge loopback :9443 → api.telegram.org:443 via sing-box SOCKS). All proxy traffic chains to gateway via Shadowsocks 2022 on :4433. `tapi.home12.ru` is a Telegram Bot API reverse proxy: Zabbix → nginx:8443 → gost:9443 → sing-box:1081 → gateway → api.telegram.org.
 
 **Gateway VPS** (`de_vps`): egress + VPN concentrator. Runs `ocserv` (OpenConnect/AnyConnect VPN on :443 TCP/UDP), `unbound` (DNS for VPN clients via DoT), `sing-box` (ss-in :4433, restricted by firewall to edge IP only). VPN subnet: `10.99.0.0/24`, DNS: `10.99.0.1`.
 
@@ -58,6 +58,8 @@ Two VPS nodes + one GL-MT6000 router, deployed via two playbooks: `site.yml` (VP
 
 **unbound DNSSEC fix**: Removes Ubuntu's conflicting `root-auto-trust-anchor-file.conf` and uses `trust-anchor-file: "/usr/share/dns/root.key"` explicitly.
 
+**tgproxy gost bridge**: nginx cannot `proxy_pass` via SOCKS5 natively. `gost` (single static binary) listens on `127.0.0.1:9443` and dials `api.telegram.org:443` through sing-box SOCKS `127.0.0.1:1081`. nginx uses `proxy_ssl_server_name on` + `proxy_ssl_name api.telegram.org` so that TLS SNI is correct even though the TCP connection goes to localhost. mtg domain-fronting forwards all non-Telegram :443 traffic to `127.0.0.1:8443` as raw TCP; nginx does SNI-based virtual hosting there, so no firewall changes are needed.
+
 ## Variables
 
 All secrets and host-specific config live in `group_vars/all.yml` (gitignored). Key vars:
@@ -65,6 +67,8 @@ All secrets and host-specific config live in `group_vars/all.yml` (gitignored). 
 - `router_ss_secret` — separate SS2022 secret for router→gateway (do not reuse the chain secret)
 - `vpn_users` — list of `{name, password}` for both VPN and proxy
 - `ocserv_domain` / `ocserv_acme_email` — gateway domain (must resolve to gateway IP before first run)
+- `tgproxy_domain` — subdomain for Telegram API reverse proxy (default: `tapi.home12.ru`; must resolve to edge IP before first run)
+- `gost_version` — gost v2 binary version (default in role: `2.11.5`)
 
 ## Post-deploy verification
 
@@ -77,9 +81,10 @@ nft list ruleset
 
 Edge:
 ```bash
-systemctl status nginx mtg sing-box --no-pager
-ss -lntup | egrep '(:443|:2080|:2081)'
+systemctl status nginx mtg sing-box gost-tgproxy --no-pager
+ss -lntup | egrep '(:443|:2080|:2081|:9443)'
 curl --proxy http://USER:PASSWORD@EDGE_IP:2080 https://ifconfig.me
+curl https://tapi.home12.ru/bot<TOKEN>/getMe
 ```
 
 Router:

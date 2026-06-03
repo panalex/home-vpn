@@ -116,6 +116,15 @@ wdtt_version: "v1.2.2"
 wdtt_go_version: "1.25.0"
 
 # =============================================================================
+# Telegram API reverse proxy on RU edge (ru_tgproxy role)
+# Zabbix скрипт: url = 'https://tapi.home12.ru/bot' + token + '/sendMessage'
+# =============================================================================
+tgproxy_domain: "tapi.home12.ru"
+tgproxy_acme_email: "{{ ocserv_acme_email }}"
+# gost_version: "2.11.5"    # переопределить только при необходимости
+# tgproxy_gost_port: 9443   # локальный порт gost на Edge VPS
+
+# =============================================================================
 # SSH
 # =============================================================================
 ssh_port: 22

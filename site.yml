@@ -33,6 +33,8 @@
       tags: [ru_singbox, ru, singbox]
     - role: ru_mtg
       tags: [ru_mtg, ru, telegram]
+    - role: ru_tgproxy
+      tags: [ru_tgproxy, ru, tgproxy]
     - role: firewall
       tags: [firewall, ru]
 

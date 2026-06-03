@@ -1,0 +1,11 @@
+---
+- name: Reload nginx
+  ansible.builtin.systemd:
+    name: nginx
+    state: reloaded
+
+- name: Restart gost-tgproxy
+  ansible.builtin.systemd:
+    name: gost-tgproxy
+    state: restarted
+    daemon_reload: true

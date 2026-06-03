@@ -1,0 +1,5 @@
+---
+gost_version: "2.11.5"
+tgproxy_gost_port: 9443
+tgproxy_domain: "tapi.home12.ru"
+tgproxy_acme_email: "{{ ocserv_acme_email }}"

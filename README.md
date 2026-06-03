@@ -6,6 +6,7 @@ Ansible-проект для двух VPS и домашнего роутера GL
 
 - браузерный HTTP/SOCKS-прокси на edge-узле с аутентификацией для FoxyProxy и похожих клиентов;
 - Telegram MTProto proxy через `mtg` на публичном edge-узле;
+- HTTPS reverse proxy для Telegram Bot API (`tapi.home12.ru`) — обход блокировки `api.telegram.org` для внешних сервисов (Zabbix и др.); трафик идёт через цепочку edge → gateway;
 - цепочку `sing-box` edge → gateway;
 - OpenConnect/AnyConnect VPN на gateway-узле через `ocserv`;
 - локальный DNS для VPN-клиентов через `unbound` с DoT-forwarding;
@@ -115,6 +116,7 @@ ansible-playbook -i inventory.ini router.yml
 | `ru_letsencrypt` | edge | выпуск LE-сертификата для edge-домена |
 | `ru_singbox` | edge | локальный SOCKS/HTTP, публичный auth proxy, outbound на gateway |
 | `ru_mtg` | edge | MTProto FakeTLS proxy для Telegram |
+| `ru_tgproxy` | edge | HTTPS reverse proxy `tapi.home12.ru` → `api.telegram.org` через gost + sing-box SOCKS |
 | `de_singbox` | gateway | ss-in на `:4433`, принимающий цепочку с edge |
 | `de_unbound` | gateway | локальный DNS для VPN-клиентов, DoT upstream |
 | `de_ocserv` | gateway | OpenConnect/AnyConnect VPN, LE-сертификат, VPN route hook |
@@ -151,7 +153,7 @@ dig @10.99.0.1 example.com
 Edge:
 
 ```bash
-systemctl status nginx mtg sing-box --no-pager
+systemctl status nginx mtg sing-box gost-tgproxy --no-pager
 ss -lntup | egrep '(:443|:2080|:2081)'
 ```
 
@@ -159,6 +161,15 @@ ss -lntup | egrep '(:443|:2080|:2081)'
 
 ```bash
 curl --proxy http://USER:PASSWORD@EDGE_IP:2080 https://ifconfig.me
+```
+
+Telegram API reverse proxy:
+
+```bash
+# gost слушает на loopback:
+ss -lntup | grep ':9443'
+# сквозной тест (с машины, где есть доступ):
+curl https://tapi.home12.ru/bot<TOKEN>/getMe
 ```
 
 Роутер GL-MT6000:

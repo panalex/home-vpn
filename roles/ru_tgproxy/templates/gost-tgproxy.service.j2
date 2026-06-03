@@ -1,0 +1,15 @@
+[Unit]
+Description=gost TCP bridge — Telegram API proxy via sing-box SOCKS
+After=network.target sing-box.service
+Wants=sing-box.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/gost \
+    -L "tcp://127.0.0.1:{{ tgproxy_gost_port }}/api.telegram.org:443" \
+    -F "socks5://127.0.0.1:{{ ru_singbox_socks_port }}"
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
