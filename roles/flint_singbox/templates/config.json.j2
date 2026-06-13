@@ -3,7 +3,7 @@
   "dns": {
     "servers": [
       { "type": "https", "tag": "dns-remote", "server": "1.1.1.1", "detour": "proxy" },
-      { "type": "tls",   "tag": "dns-local",  "server": "{{ ru_dns_dot_ip }}", "server_name": "{{ ru_dns_dot_sni }}", "detour": "direct" }
+      { "type": "tls",   "tag": "dns-local",  "server": "{{ ru_dns_dot_ip }}", "server_port": 853, "tls": { "enabled": true, "server_name": "{{ ru_dns_dot_sni }}" }, "detour": "direct" }
     ],
     "rules": [
 {% if dpi_bypass_domains %}
