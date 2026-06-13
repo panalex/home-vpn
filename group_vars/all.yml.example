@@ -155,8 +155,6 @@ dpi_bypass_domains:
   - cdninstagram.com
   - fbcdn.net
   - facebook.com
-  - discord.com
-  - discordapp.com
   - x.com
   - twitter.com
   - t.co
@@ -174,12 +172,38 @@ nfqws_queue_num: 1
 # permitted"). Если переопределяешь --dpi-desync-fwmark в nfqws_args — синхронизируй тут.
 nfqws_fwmark: "0x40000000"
 
-# Аргументы nfqws — подобрать под свой ISP/TSPU перебором стратегий (blockcheck.sh
-# запускать из ПОЛНОГО релиза zapret, а не одним файлом, иначе ошибка common/base.sh;
-# либо быстрый curl-перебор стратегий прямо на роутере).
-# Значение ниже (multidisorder, file-free, без google-payload) подобрано под RU TSPU
-# и покрывает youtube/instagram/facebook/discord/x. На другом ISP может потребоваться иное.
-nfqws_args: "--filter-tcp=443 --dpi-desync=multidisorder --dpi-desync-split-pos=1,midsld,host+1,sld+2"
+# Домены, которым достаётся УСИЛЕННАЯ стратегия nfqws (первый профиль, до --new).
+# googlevideo РФ TSPU режет агрессивнее обычного split — нужен fake-пакет + md5sig,
+# иначе страница youtube.com грузится, а видео из googlevideo.com встаёт.
+# ВАЖНО: должны быть подмножеством dpi_bypass_domains, иначе sing-box не пометит
+# их mark'ом nfqws_routing_mark (100) и nftables не отдаст пакеты в очередь nfqws.
+nfqws_youtube_domains:
+  - youtube.com
+  - googlevideo.com
+  - ytimg.com
+  - ggpht.com
+
+# Аргументы nfqws — два профиля, разделённые --new (per-host split):
+#   1) hostlist youtube/googlevideo → fake,multidisorder + md5sig (сильная стратегия)
+#   2) catch-all (instagram/facebook/x/twitter) → обычный multidisorder split
+# nfqws применяет ПЕРВЫЙ профиль, чей фильтр совпал по SNI; профиль 2 без hostlist
+# ловит то, что не попало в hostlist профиля 1. nftables и так отдаёт в очередь
+# только mark=100 (= dpi_bypass_domains), поэтому профиль 2 не трогает обычный трафик.
+# {{ ... }} ниже разворачивает Ansible при загрузке переменных (это vars-файл, а не
+# шаблон) — в итоговую строку подставится список доменов через запятую.
+# Стратегии подбирать под свой TSPU (blockcheck.sh из ПОЛНОГО релиза zapret, а не
+# одним файлом — иначе ошибка common/base.sh).
+# Если профиль 1 не помог по youtube — пробуй fake,multisplit + seqovl или badseq.
+nfqws_args: >-
+  --filter-tcp=443
+  --hostlist-domains={{ nfqws_youtube_domains | join(',') }}
+  --dpi-desync=fake,multidisorder
+  --dpi-desync-split-pos=midsld
+  --dpi-desync-fooling=md5sig
+  --new
+  --filter-tcp=443
+  --dpi-desync=multidisorder
+  --dpi-desync-split-pos=1,midsld,host+1,sld+2
 
 # Версия zapret (bol-van/zapret) для скачивания бинаря nfqws.
 # URL: https://github.com/bol-van/zapret/releases/download/v{{ nfqws_version }}/zapret-v{{ nfqws_version }}.tar.gz
