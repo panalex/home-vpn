@@ -44,7 +44,7 @@ Two VPS nodes + one GL-MT6000 router, deployed via two playbooks: `site.yml` (VP
 
 **Gateway VPS** (`de_vps`): egress + VPN concentrator. Runs `ocserv` (OpenConnect/AnyConnect VPN on :443 TCP/UDP), `unbound` (DNS for VPN clients via DoT), `sing-box` (ss-in :4433, restricted by firewall to edge IP only). VPN subnet: `10.99.0.0/24`, DNS: `10.99.0.1`.
 
-**Router** (`routers`): GL-MT6000 with OpenWrt + `sing-box` TUN (`singtun0`). FakeIP DNS + split routing: RU IPs/domains go direct, everything else (incl. RKN-blocked sites by default) tunnels to gateway via SS2022 :8388. `dpi_bypass_domains` (default empty) is an opt-in third category: listed domains go direct WAN + nfqws DPI-desync instead of the tunnel. Split-DNS: RU domains + `dpi_bypass_domains` resolve via Yandex **DoT** (`dns-local`, anti-spoofing); foreign domains resolve via DoH over the tunnel (`dns-remote`, `detour: proxy`). A cron watchdog (`/usr/bin/singbox-watchdog`) restarts `sing-box` if the process dies.
+**Router** (`routers`): GL-MT6000 with OpenWrt + `sing-box` TUN (`singtun0`). Split routing (by sniffed SNI + geoip): RU IPs/domains go direct, everything else (incl. RKN-blocked sites by default) tunnels to gateway via SS2022 :8388. `dpi_bypass_domains` (default empty) is an opt-in third category: listed domains go direct WAN + nfqws DPI-desync instead of the tunnel. Split-DNS: `*.ru` + `geosite-ru` + `dpi_bypass_domains` resolve via Yandex **DoT** (`dns-local`, anti-spoofing, direct WAN); **everything else resolves via DoH over the tunnel** (`dns-remote` = 1.1.1.1, `detour: proxy`) — real IPs resolved at the gateway, no FakeIP. A cron watchdog (`/usr/bin/singbox-watchdog`) restarts `sing-box` if the process dies.
 
 ## Key design decisions
 
@@ -99,7 +99,7 @@ curl https://tapi.home12.ru/bot<TOKEN>/getMe
 Router:
 ```bash
 service sing-box status && ip a show singtun0
-nslookup instagram.com 127.0.0.1          # default (dpi_bypass_domains=[]): FakeIP 198.18.x → resolved at gateway over tunnel
+nslookup instagram.com 127.0.0.1          # default (dpi_bypass_domains=[]): REAL Meta IP, resolved via dns-remote (DoH over tunnel) at gateway
                                           # if on nfqws-direct via dns-local: would be NXDOMAIN (Yandex censors Meta) — see caveat
 crontab -l | grep singbox-watchdog         # watchdog installed
 uci show firewall | grep mtu_fix           # MSS clamp on proxy zone

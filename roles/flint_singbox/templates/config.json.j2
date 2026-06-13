@@ -3,15 +3,14 @@
   "dns": {
     "servers": [
       { "type": "https", "tag": "dns-remote", "server": "1.1.1.1", "detour": "proxy" },
-      { "type": "tls",   "tag": "dns-local",  "server": "{{ ru_dns_dot_ip }}", "server_name": "{{ ru_dns_dot_sni }}", "detour": "direct" },
-      { "type": "fakeip","tag": "dns-fakeip", "inet4_range": "198.18.0.0/15", "inet6_range": "fc00::/18" }
+      { "type": "tls",   "tag": "dns-local",  "server": "{{ ru_dns_dot_ip }}", "server_name": "{{ ru_dns_dot_sni }}", "detour": "direct" }
     ],
     "rules": [
 {% if dpi_bypass_domains %}
       { "domain_suffix": {{ dpi_bypass_domains | to_json }}, "server": "dns-local" },
 {% endif %}
       { "rule_set": "geosite-ru", "server": "dns-local" },
-      { "query_type": ["A", "AAAA"], "server": "dns-fakeip" }
+      { "domain_suffix": [".ru"], "server": "dns-local" }
     ],
     "final": "dns-remote",
     "strategy": "ipv4_only",

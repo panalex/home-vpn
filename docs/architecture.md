@@ -217,11 +217,10 @@ Firewall реализован через nftables.
 
 | Категория доменов | Резолвер | Транспорт |
 |---|---|---|
-| `dpi_bypass_domains` + `geosite-ru` | `dns-local` — Яндекс DoT (`77.88.8.8`, `detour: direct`) | DoT, RU-локация |
-| всё остальное | `dns-remote` — Cloudflare DoH (`detour: proxy`) | DoH через туннель DE |
-| A/AAAA (по умолчанию) | `dns-fakeip` | FakeIP `198.18.0.0/15` |
+| `dpi_bypass_domains` + `geosite-ru` + `*.ru` | `dns-local` — Яндекс DoT (`77.88.8.8`, `detour: direct`) | DoT, RU-локация |
+| всё остальное (`final`) | `dns-remote` — Cloudflare DoH (`1.1.1.1`, `detour: proxy`) | DoH через туннель DE, реальные IP с gateway |
 
-RU- и заблокированные домены резолвятся через **DoT** (а не plain UDP:53): РКН/ТСПУ подделывают открытые DNS-ответы для заблокированных доменов на пути, и отравленный IP отправил бы desync-пакеты nfqws в чёрную дыру. DoT по IP спуф-устойчив и не требует bootstrap-резолва; RU-локация даёт ближайший достижимый CDN-узел. Иностранные домены резолвятся DoH через туннель, поэтому CDN отдаёт корректные не-RU узлы. `ru_dns_dot_ip` / `ru_dns_dot_sni` — в `flint_singbox/defaults`.
+FakeIP **не используется**: dnsmasq на роутере стоит перед sing-box на :53 и режет зарезервированный диапазон `198.18.0.0/15` своей rebind-защитой, отдавая клиенту `NXDOMAIN`. Поэтому иностранные домены резолвятся в реальные IP через DoH-туннель (`dns-remote`, `detour: proxy`) — резолв происходит со стороны gateway (DE, без РКН), а split-routing по домену продолжает работать за счёт `sniff` (SNI). RU- и заблокированные домены резолвятся через **DoT** (а не plain UDP:53): РКН/ТСПУ подделывают открытые DNS-ответы для заблокированных доменов на пути, и отравленный IP отправил бы desync-пакеты nfqws в чёрную дыру. DoT по IP спуф-устойчив и не требует bootstrap-резолва; RU-локация даёт ближайший достижимый CDN-узел. `ru_dns_dot_ip` / `ru_dns_dot_sni` — в `flint_singbox/defaults`.
 
 > ⚠️ **Яндекс DoT цензурит домены Meta.** `dns-local` запрашивается с RU-IP роутера (`detour: direct`), а Яндекс по требованию РКН отдаёт **NXDOMAIN** на `instagram.com` / `facebook.com` / `cdninstagram.com` / `fbcdn.net` из РФ (симптом в браузере — `DNS_PROBE_FINISHED_NXDOMAIN`). DoT защищает от подмены *на пути*, но не от политики самого резолвера. Поэтому Meta-домены нельзя резолвить через `dns-local`: либо они идут через туннель (категория `final: proxy` → резолв на gateway, по умолчанию так), либо, если нужен nfqws-direct, их надо резолвить через `dns-remote`. Это же касается любого домена, который Яндекс отдаёт как NXDOMAIN/заглушку.
 
