@@ -146,19 +146,30 @@ ssh_port: 22
 # На 500 Мбит/с при низкой нагрузке потеря скорости некритична.
 flint_disable_hw_offload: true
 
-dpi_bypass_domains:
-  - youtube.com
-  - googlevideo.com
-  - ytimg.com
-  - ggpht.com
-  - instagram.com
-  - cdninstagram.com
-  - fbcdn.net
-  - facebook.com
-  - x.com
-  - twitter.com
-  - t.co
-  - twimg.com
+# Домены, которые обходят РКН локально (прямой WAN + nfqws-десинк, БЕЗ тоннеля).
+# Всё, чего тут НЕТ и что не RU (geosite-ru/geoip-ru) → уходит в тоннель (final: proxy).
+#
+# ВАЖНО про резолв через dns-local (Yandex DoT, detour: direct):
+# Yandex запрашивается с RU IP роутера и по требованию РКН отдаёт NXDOMAIN на
+# домены Meta (instagram/facebook/cdninstagram/fbcdn) — DoT тут не спасает, это
+# политика самого резолвера, а не спуфинг на пути. Поэтому Meta-домены НЕЛЬЗЯ
+# оставлять в этом списке с резолвом через Yandex: либо убрать в тоннель (ниже),
+# либо резолвить через dns-remote.
+#
+# Пусто (dpi_bypass_domains: []) → ВСЕ заблокированные сайты идут через тоннель
+# (gateway). Надёжно (мимо nfqws/TSPU и мимо Yandex-цензуры), но youtube грузит
+# bandwidth тоннеля и выходит с DE IP. Шаблон flint_singbox корректно генерит
+# конфиг и для пустого списка (правила dpi-bypass просто не добавляются).
+dpi_bypass_domains: []
+# Вариант nfqws-direct (нужен рабочий nfqws + Meta резолвить мимо Yandex):
+#   - youtube.com
+#   - googlevideo.com
+#   - ytimg.com
+#   - ggpht.com
+#   - x.com
+#   - twitter.com
+#   - t.co
+#   - twimg.com
 
 # Метка сокета (SO_MARK) для трафика dpi-bypass-direct outbound в sing-box.
 # nftables перехватывает пакеты с этой меткой в OUTPUT → NFQUEUE → nfqws.

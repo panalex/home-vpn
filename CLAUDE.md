@@ -44,7 +44,7 @@ Two VPS nodes + one GL-MT6000 router, deployed via two playbooks: `site.yml` (VP
 
 **Gateway VPS** (`de_vps`): egress + VPN concentrator. Runs `ocserv` (OpenConnect/AnyConnect VPN on :443 TCP/UDP), `unbound` (DNS for VPN clients via DoT), `sing-box` (ss-in :4433, restricted by firewall to edge IP only). VPN subnet: `10.99.0.0/24`, DNS: `10.99.0.1`.
 
-**Router** (`routers`): GL-MT6000 with OpenWrt + `sing-box` TUN (`singtun0`). FakeIP DNS + split routing: RU IPs/domains go direct, everything else tunnels to gateway via SS2022 :8388. Split-DNS: RU/blocked domains resolve via Yandex **DoT** (`dns-local`, anti-spoofing); foreign domains resolve via DoH over the tunnel (`dns-remote`, `detour: proxy`). A cron watchdog (`/usr/bin/singbox-watchdog`) restarts `sing-box` if the process dies.
+**Router** (`routers`): GL-MT6000 with OpenWrt + `sing-box` TUN (`singtun0`). FakeIP DNS + split routing: RU IPs/domains go direct, everything else (incl. RKN-blocked sites by default) tunnels to gateway via SS2022 :8388. `dpi_bypass_domains` (default empty) is an opt-in third category: listed domains go direct WAN + nfqws DPI-desync instead of the tunnel. Split-DNS: RU domains + `dpi_bypass_domains` resolve via Yandex **DoT** (`dns-local`, anti-spoofing); foreign domains resolve via DoH over the tunnel (`dns-remote`, `detour: proxy`). A cron watchdog (`/usr/bin/singbox-watchdog`) restarts `sing-box` if the process dies.
 
 ## Key design decisions
 
@@ -60,6 +60,8 @@ Two VPS nodes + one GL-MT6000 router, deployed via two playbooks: `site.yml` (VP
 
 **Router RU DNS over TLS**: `dns-local` uses Yandex DoT by IP (`type: tls`, `server: 77.88.8.8`, `server_name: common.dot.dns.yandex.net`, `detour: direct`) instead of plain UDP:53. RKN/TSPU spoof plain DNS responses for blocked domains (instagram/facebook/discord) on-path; a poisoned IP would send nfqws desync packets into a blackhole. DoT by IP is spoof-proof and needs no bootstrap; the RU location still yields a directly-reachable CDN node.
 
+**Caveat — Yandex DoT censors Meta**: queried from the router's RU IP (`detour: direct`), Yandex returns **NXDOMAIN** for Meta domains (`instagram.com`/`facebook.com`/`cdninstagram.com`/`fbcdn.net`) per RKN — DoT prevents on-path spoofing, not the resolver's own policy. So Meta domains must NOT sit in `dpi_bypass_domains` with `dns-local` resolution: either let them go through the tunnel (`final: proxy`, resolved at the gateway — the default since `dpi_bypass_domains: []`), or resolve them via `dns-remote` if kept on nfqws-direct. Symptom of the misconfig: `DNS_PROBE_FINISHED_NXDOMAIN` in the browser.
+
 **Router fail-open + watchdog (no hard kill-switch)**: a hard kill-switch was rejected for a home network. Tunnel-down ≠ sing-box-down: while sing-box is alive, `direct`/`dpi-bypass-direct` (RU + zapret) keep working and only the `final: proxy` (geo-blocked) category fails — and it fails closed at the app level (no leak), no firewall rule needed. The only leak window is a rare process crash, which a 1-minute cron watchdog (`router_singbox_watchdog`) recovers automatically. `mtu_fix: '1'` on the `proxy` zone clamps MSS for TCP inside the tunnel.
 
 **tgproxy gost bridge**: nginx cannot `proxy_pass` via SOCKS5 natively. `gost` (single static binary) listens on `127.0.0.1:9443` and dials `api.telegram.org:443` through sing-box SOCKS `127.0.0.1:1081`. nginx uses `proxy_ssl_server_name on` + `proxy_ssl_name api.telegram.org` so that TLS SNI is correct even though the TCP connection goes to localhost. mtg domain-fronting forwards all non-Telegram :443 traffic to `127.0.0.1:8443` as raw TCP; nginx does SNI-based virtual hosting there, so no firewall changes are needed.
@@ -74,6 +76,7 @@ All secrets and host-specific config live in `group_vars/all.yml` (gitignored). 
 - `tgproxy_domain` — subdomain for Telegram API reverse proxy (default: `tapi.home12.ru`; must resolve to edge IP before first run)
 - `gost_version` — gost v2 binary version (default in role: `2.11.5`)
 - `ru_dns_dot_ip` / `ru_dns_dot_sni` — router RU DNS-over-TLS upstream (defaults in `flint_singbox/defaults`: `77.88.8.8` / `common.dot.dns.yandex.net`)
+- `dpi_bypass_domains` — opt-in list of RKN-blocked domains routed direct WAN + nfqws DPI-desync instead of the tunnel (default `[]` → all blocked sites tunnel to gateway). Do not put Meta domains here with `dns-local` resolution (see caveat above). `nfqws_youtube_domains` must be a subset; `nfqws_routing_mark`/`nfqws_queue_num`/`nfqws_fwmark`/`nfqws_args` tune the desync
 - `router_singbox_watchdog` — enable the cron watchdog that restarts router `sing-box` on crash (default in role: `true`)
 
 ## Post-deploy verification
@@ -96,7 +99,8 @@ curl https://tapi.home12.ru/bot<TOKEN>/getMe
 Router:
 ```bash
 service sing-box status && ip a show singtun0
-nslookup instagram.com 127.0.0.1          # blocked domain → real CDN IP, not an RKN stub (DoT works)
+nslookup instagram.com 127.0.0.1          # default (dpi_bypass_domains=[]): FakeIP 198.18.x → resolved at gateway over tunnel
+                                          # if on nfqws-direct via dns-local: would be NXDOMAIN (Yandex censors Meta) — see caveat
 crontab -l | grep singbox-watchdog         # watchdog installed
 uci show firewall | grep mtu_fix           # MSS clamp on proxy zone
 ```

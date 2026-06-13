@@ -14,7 +14,7 @@ Ansible-проект для двух VPS и домашнего роутера GL
 - единый список пользователей для прокси и VPN;
 - WDTT-сервер на gateway: WireGuard через VK TURN / DTLS (:56000), позволяет пробить NAT без проброса портов;
 - sing-box TUN на роутере GL-MT6000 (OpenWrt): трафик домашней сети прозрачно уходит в gateway через Shadowsocks 2022, российские IP/домены идут напрямую;
-- `nfqws` (zapret) на роутере: DPI-десинхронизация для сайтов, заблокированных РКН, с прямым выходом через WAN без туннеля.
+- `nfqws` (zapret) на роутере: опциональная DPI-десинхронизация для отдельных РКН-заблокированных сайтов с прямым выходом через WAN без туннеля (домены задаются в `dpi_bypass_domains`; по умолчанию список пуст — все заблокированные сайты идут через туннель).
 
 Репозиторий подготовлен для публичной публикации: реальные IP, домены, пароли, `.git`-история и локальные vars исключены. Перед использованием создайте собственные `inventory.ini` и `group_vars/all.yml` из `.example`-файлов.
 
@@ -35,7 +35,7 @@ flowchart LR
 
     U4 -->|all traffic via TUN| FL
     FL -->|RU IP/domains| NET
-    FL -->|dpi_bypass_domains: direct + nfqws| NET
+    FL -.->|dpi_bypass_domains: direct + nfqws (опц., по умолч. пусто)| NET
     FL -->|non-RU: SS2022 :8388| DE
     U2 -->|HTTP proxy auth| RU
     U3 -->|MTProto FakeTLS :443| RU
@@ -124,7 +124,7 @@ ansible-playbook -i inventory.ini router.yml
 | `users` | gateway | синхронизация `/etc/ocserv/ocpasswd` из `vpn_users` |
 | `firewall` | VPS (оба) | nftables input/forward rules |
 | `flint_singbox` | GL-MT6000 | sing-box TUN (`singtun0`), split-DNS (RU/блок-домены → Яндекс **DoT**, иностранные → DoH через туннель, FakeIP), split-routing по `geoip-ru`/`geosite-ru`, SS2022 outbound на gateway, cron-watchdog + `mtu_fix` |
-| `flint_nfqws` | GL-MT6000 | DPI-десинхронизация (zapret/nfqws); NFQUEUE перехватывает TCP 80/443 и блокирует QUIC для трафика с `routing_mark={{ nfqws_routing_mark }}` |
+| `flint_nfqws` | GL-MT6000 | Опциональная DPI-десинхронизация (zapret/nfqws); NFQUEUE перехватывает TCP 80/443 и блокирует QUIC для трафика с `routing_mark={{ nfqws_routing_mark }}`. Простаивает, если `dpi_bypass_domains` пуст |
 
 ## Важные runtime-особенности
 

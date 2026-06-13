@@ -7,7 +7,9 @@
       { "type": "fakeip","tag": "dns-fakeip", "inet4_range": "198.18.0.0/15", "inet6_range": "fc00::/18" }
     ],
     "rules": [
+{% if dpi_bypass_domains %}
       { "domain_suffix": {{ dpi_bypass_domains | to_json }}, "server": "dns-local" },
+{% endif %}
       { "rule_set": "geosite-ru", "server": "dns-local" },
       { "query_type": ["A", "AAAA"], "server": "dns-fakeip" }
     ],
@@ -48,8 +50,10 @@
       { "action": "sniff" },
       { "protocol": "dns", "action": "hijack-dns" },
       { "ip_is_private": true, "outbound": "direct" },
+{% if dpi_bypass_domains %}
       { "domain_suffix": {{ dpi_bypass_domains | to_json }}, "network": "udp", "port": 443, "outbound": "block" },
       { "domain_suffix": {{ dpi_bypass_domains | to_json }}, "outbound": "dpi-bypass-direct" },
+{% endif %}
       { "rule_set": ["geosite-ru", "geoip-ru"], "outbound": "direct" }
     ],
     "rule_set": [

@@ -72,7 +72,9 @@ sequenceDiagram
 
 Преимущество: DTLS через публичные TURN-серверы VK пробивает большинство NAT без проброса портов на клиентской стороне.
 
-### 5. Роутер: DPI-обход через nfqws
+### 5. Роутер: DPI-обход через nfqws (опционально)
+
+> По умолчанию `dpi_bypass_domains` пуст — все РКН-заблокированные сайты идут **через туннель** до gateway (категория `final: proxy`), мимо nfqws и ТСПУ. Схема ниже работает только для доменов, явно добавленных в `dpi_bypass_domains`.
 
 ```mermaid
 sequenceDiagram
@@ -86,7 +88,9 @@ sequenceDiagram
     FL->>I: direct WAN (no VPN tunnel)
 ```
 
-nfqws перехватывает пакеты с `routing_mark={{ nfqws_routing_mark }}` через NFQUEUE, блокирует QUIC (UDP/443) и десинхронизирует TCP-хэндшейки (disorder2, split). Список доменов задаётся в `dpi_bypass_domains`.
+nfqws перехватывает пакеты с `routing_mark={{ nfqws_routing_mark }}` через NFQUEUE, блокирует QUIC (UDP/443) и десинхронизирует TCP-хэндшейки (disorder2, split). Список доменов задаётся в `dpi_bypass_domains` (по умолчанию пуст). Шаблон `flint_singbox/config.json.j2` оборачивает правила dpi-bypass в `{% if dpi_bypass_domains %}`, поэтому пустой список даёт валидный конфиг без этой категории.
+
+> **Домены Meta нельзя класть в `dpi_bypass_domains` с резолвом через Яндекс.** См. предупреждение в split-DNS ниже.
 
 ### 3. Telegram -> Edge mtg -> Gateway -> Telegram
 
@@ -204,10 +208,10 @@ Firewall реализован через nftables.
 | Категория | Правило | Выход |
 |---|---|---|
 | RU IP / geosite-ru | sing-box `geoip:ru`, `geosite:ru` | прямой WAN (без туннеля) |
-| `dpi_bypass_domains` | sing-box → `dpi-bypass-direct` outbound с `routing_mark` | прямой WAN + nfqws NFQUEUE десинхронизация |
-| всё остальное | sing-box → SS2022 outbound | туннель до gateway VPS |
+| `dpi_bypass_domains` (опц., по умолч. пусто) | sing-box → `dpi-bypass-direct` outbound с `routing_mark` | прямой WAN + nfqws NFQUEUE десинхронизация |
+| всё остальное (вкл. заблокированные сайты по умолчанию) | sing-box → SS2022 outbound | туннель до gateway VPS |
 
-`dpi_bypass_domains` и `nfqws_routing_mark` задаются в `group_vars/all.yml`.
+`dpi_bypass_domains` и `nfqws_routing_mark` задаются в `group_vars/all.yml`. По умолчанию `dpi_bypass_domains: []` — РКН-заблокированные сайты (youtube, instagram, x.com…) идут через туннель. nfqws-direct (средняя строка) — opt-in для отдельных доменов: экономит bandwidth туннеля и сохраняет RU-CDN-локацию, но требует рабочей стратегии десинхронизации под конкретный ТСПУ.
 
 ### Split-DNS на роутере
 
@@ -218,6 +222,8 @@ Firewall реализован через nftables.
 | A/AAAA (по умолчанию) | `dns-fakeip` | FakeIP `198.18.0.0/15` |
 
 RU- и заблокированные домены резолвятся через **DoT** (а не plain UDP:53): РКН/ТСПУ подделывают открытые DNS-ответы для заблокированных доменов на пути, и отравленный IP отправил бы desync-пакеты nfqws в чёрную дыру. DoT по IP спуф-устойчив и не требует bootstrap-резолва; RU-локация даёт ближайший достижимый CDN-узел. Иностранные домены резолвятся DoH через туннель, поэтому CDN отдаёт корректные не-RU узлы. `ru_dns_dot_ip` / `ru_dns_dot_sni` — в `flint_singbox/defaults`.
+
+> ⚠️ **Яндекс DoT цензурит домены Meta.** `dns-local` запрашивается с RU-IP роутера (`detour: direct`), а Яндекс по требованию РКН отдаёт **NXDOMAIN** на `instagram.com` / `facebook.com` / `cdninstagram.com` / `fbcdn.net` из РФ (симптом в браузере — `DNS_PROBE_FINISHED_NXDOMAIN`). DoT защищает от подмены *на пути*, но не от политики самого резолвера. Поэтому Meta-домены нельзя резолвить через `dns-local`: либо они идут через туннель (категория `final: proxy` → резолв на gateway, по умолчанию так), либо, если нужен nfqws-direct, их надо резолвить через `dns-remote`. Это же касается любого домена, который Яндекс отдаёт как NXDOMAIN/заглушку.
 
 ### Отказоустойчивость роутера
 
