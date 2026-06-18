@@ -38,6 +38,54 @@ ru_dns_dot_sni: "common.dot.dns.yandex.net"
 router_singbox_watchdog: true
 
 # =============================================================================
+# Транспорт leg home→edge (роутер Flint 2 → edge VPS)
+# =============================================================================
+# Почему не «голый» SS-2022 (router-in :8388): ТСПУ провайдера ушёл от сигнатур
+# протокола к АНАЛИЗУ ПОВЕДЕНИЯ + JA3/JA4. SS2022 палится первым же шифроблоком
+# (TCP-handshake проходит, payload дропается → «чёрная дыра»). Два новых
+# транспорта на edge всегда включены параллельно, активный на роутере выбирается
+# переменной router_primary_transport (см. ниже) — переключение = смена
+# переменной + редеплой ТОЛЬКО роутера, edge держит оба inbound постоянно.
+#
+#  1) hysteria2 (primary) — UDP/QUIC. TCP-ориентированный ТСПУ его не видит как
+#     поток для DPI-разбора; TLS поверх QUIC использует УЖЕ существующий LE-серт
+#     edge (тот же fullchain, что у nginx/mtg) → валидный серт на IP-коннекте.
+#     obfs salamander подмешивает соль в QUIC-initial, пряча сигнатуру QUIC.
+#  2) shadowtls v3 (fallback) — TCP. Маскируется под TLS1.3-хендшейк к реальному
+#     популярному сайту (handshake_server), затем туннелирует внутренний SS2022.
+#     Нужен, если провайдер режет UDP/QUIC целиком.
+#
+# ВАЖНО — Brutal ВЫКЛЮЧЕН СОЗНАТЕЛЬНО: up_mbps/down_mbps НЕ задаются ни на edge,
+# ни на роутере. На стабильном канале Brutal (BBR-подобный CC с фиксированной
+# полосой) генерит аномально ровный трафик-паттерн → отдельный признак для
+# поведенческого детекта. Оставляем штатный congestion control.
+
+# --- hysteria2 (primary). UDP-порт без коллизий с 22/80/443/1080/1081/2080/
+#     2081/4433/8388/8443/9443/56000/56001 и НЕ 443 (там ocserv udp на DE,
+#     на edge — mtg). Если провайдер режет этот UDP-порт/QUIC — сменить на другой
+#     высокий UDP-порт и редеплой edge+роутер (см. README, шаг (f)). ---
+hy2_port: 39443
+hy2_password: "REPLACE_ME_BASE64_32_BYTES"       # openssl rand -base64 32
+hy2_obfs_password: "REPLACE_ME_BASE64_32_BYTES"  # openssl rand -base64 32
+
+# --- shadowtls v3 (fallback). TCP-порт без коллизий (см. список выше). ---
+shadowtls_port: 8843
+shadowtls_password: "REPLACE_ME_BASE64_32_BYTES" # openssl rand -base64 32
+# Реальный TLS1.3-домен для маскировки хендшейка. Общий для edge-inbound
+# (handshake.server) и router-outbound (tls.server_name). Дефолт — нейтральный
+# популярный TLS1.3-сайт. При whitelist-режиме ТСПУ («белый список») можно
+# заменить на whitelisted RU-домен, разрешённый к доступу с RU IP.
+shadowtls_handshake_server: "www.microsoft.com"
+# Внутренний SS2022 под shadowtls (detour-цель на edge / detour-источник на
+# роутере). НОВЫЙ ключ — НЕ переиспользуй router_ss_secret и не secret цепочки :4433.
+shadowtls_ss_method: "2022-blake3-aes-256-gcm"
+shadowtls_ss_secret: "REPLACE_ME_BASE64_32_BYTES"  # openssl rand -base64 32
+
+# Активный транспорт на РОУТЕРЕ: hysteria2 | shadowtls. Edge всегда слушает оба,
+# поэтому переключение — смена этой переменной + ansible-playbook router.yml.
+router_primary_transport: hysteria2
+
+# =============================================================================
 # RU -> sing-box client (relays everything to DE)
 # =============================================================================
 ru_singbox_socks_bind: "127.0.0.1"

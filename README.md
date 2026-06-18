@@ -36,7 +36,9 @@ flowchart LR
     U4 -->|all traffic via TUN| FL
     FL -->|RU IP/domains| NET
     FL -.->|dpi_bypass_domains: direct + nfqws (опц., по умолч. пусто)| NET
-    FL -->|non-RU: SS2022 :8388| DE
+    FL ==>|non-RU primary: hysteria2 obfs UDP :39443| RU
+    FL -.->|non-RU fallback: shadowtls v3 TCP :8843| RU
+    FL -.->|legacy SS2022 :8388 — режется ТСПУ| RU
     U2 -->|HTTP proxy auth| RU
     U3 -->|MTProto FakeTLS :443| RU
     RU -->|sing-box chain :4433| DE
@@ -114,7 +116,7 @@ ansible-playbook -i inventory.ini router.yml
 | `common` | VPS (оба) | базовые пакеты, sysctl, nftables, BBR |
 | `ru_fronting` | edge | nginx-фронт, статическая заглушка, TLS-файлы |
 | `ru_letsencrypt` | edge | выпуск LE-сертификата для edge-домена |
-| `ru_singbox` | edge | локальный SOCKS/HTTP, публичный auth proxy, outbound на gateway |
+| `ru_singbox` | edge | локальный SOCKS/HTTP, публичный auth proxy, outbound на gateway; inbound'ы leg home→edge: hysteria2 (obfs salamander, UDP) + shadowtls v3 (TCP) + legacy SS2022 router-in, все → de-ss chain |
 | `ru_mtg` | edge | MTProto FakeTLS proxy для Telegram |
 | `ru_tgproxy` | edge | HTTPS reverse proxy `tapi.home12.ru` → `api.telegram.org` через gost + sing-box SOCKS |
 | `de_singbox` | gateway | ss-in на `:4433`, принимающий цепочку с edge |
@@ -123,7 +125,7 @@ ansible-playbook -i inventory.ini router.yml
 | `de_wdtt` | gateway | WireGuard через VK TURN; собирает `wdtt-server` из исходников Go, DTLS `:56000`, WG `:56001`, NAT `10.66.66.0/24` |
 | `users` | gateway | синхронизация `/etc/ocserv/ocpasswd` из `vpn_users` |
 | `firewall` | VPS (оба) | nftables input/forward rules |
-| `flint_singbox` | GL-MT6000 | sing-box TUN (`singtun0`), split-DNS (RU/блок-домены → Яндекс **DoT**, иностранные → DoH через туннель, FakeIP), split-routing по `geoip-ru`/`geosite-ru`, SS2022 outbound на gateway, cron-watchdog + `mtu_fix` |
+| `flint_singbox` | GL-MT6000 | sing-box TUN (`singtun0`), split-DNS (RU/блок-домены → Яндекс **DoT**, иностранные → DoH через туннель, FakeIP), split-routing по `geoip-ru`/`geosite-ru`, outbound `proxy` на edge — транспорт выбирается `router_primary_transport` (hysteria2 \| shadowtls), cron-watchdog + `mtu_fix` |
 | `flint_nfqws` | GL-MT6000 | Опциональная DPI-десинхронизация (zapret/nfqws); NFQUEUE перехватывает TCP 80/443 и блокирует QUIC для трафика с `routing_mark={{ nfqws_routing_mark }}`. Простаивает, если `dpi_bypass_domains` пуст |
 
 ## Важные runtime-особенности

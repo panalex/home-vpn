@@ -43,6 +43,49 @@
       "listen_port": {{ router_ss_port }},
       "method": "{{ router_ss_method }}",
       "password": "{{ router_ss_secret }}"
+    },
+    {
+      "type": "hysteria2",
+      "tag": "hy2-in",
+      "listen": "0.0.0.0",
+      "listen_port": {{ hy2_port }},
+      "obfs": {
+        "type": "salamander",
+        "password": "{{ hy2_obfs_password }}"
+      },
+      "users": [
+        { "name": "router", "password": "{{ hy2_password }}" }
+      ],
+      "tls": {
+        "enabled": true,
+        "alpn": ["h3"],
+        "certificate_path": "/etc/letsencrypt/live/{{ domain }}/fullchain.pem",
+        "key_path": "/etc/letsencrypt/live/{{ domain }}/privkey.pem"
+      }
+    },
+    {
+      "type": "shadowtls",
+      "tag": "shadowtls-in",
+      "listen": "0.0.0.0",
+      "listen_port": {{ shadowtls_port }},
+      "version": 3,
+      "users": [
+        { "name": "router", "password": "{{ shadowtls_password }}" }
+      ],
+      "handshake": {
+        "server": "{{ shadowtls_handshake_server }}",
+        "server_port": 443
+      },
+      "strict_mode": true,
+      "detour": "shadowtls-ss-in"
+    },
+    {
+      "type": "shadowsocks",
+      "tag": "shadowtls-ss-in",
+      "listen": "127.0.0.1",
+      "network": "tcp",
+      "method": "{{ shadowtls_ss_method }}",
+      "password": "{{ shadowtls_ss_secret }}"
     }{% if ru_public_proxy_enable | bool %},
     {
       "type": "socks",
@@ -103,7 +146,7 @@
       "server": "remote-dns"
     },
     "rules": [
-      { "inbound": ["router-in"], "outbound": "de-ss" },
+      { "inbound": ["router-in", "hy2-in", "shadowtls-ss-in"], "outbound": "de-ss" },
       {
         "ip_cidr": ["{{ hostvars[groups['de_vps'][0]].ansible_host | default(groups['de_vps'][0]) }}/32"],
         "outbound": "direct"

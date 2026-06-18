@@ -16,6 +16,9 @@ table inet filter {
     {% if 'ru_vps' in group_names %}
     tcp dport 80 accept
     tcp dport {{ mtg_bind_port }} accept
+    # home->edge transports: hysteria2 (UDP/QUIC) primary, shadowtls (TCP) fallback
+    udp dport {{ hy2_port }} accept
+    tcp dport {{ shadowtls_port }} accept
     {% if ru_public_proxy_enable | bool %}
     tcp dport {{ ru_public_proxy_socks_port }} accept
     tcp dport {{ ru_public_proxy_http_port }} accept

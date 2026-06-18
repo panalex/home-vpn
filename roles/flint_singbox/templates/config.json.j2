@@ -1,5 +1,9 @@
+{%- set dpi_bypass_json = dpi_bypass_domains | to_json -%}
 {
   "log": { "level": "warn", "timestamp": true },
+  "experimental": {
+    "cache_file": { "enabled": true, "path": "/etc/sing-box/cache.db" }
+  },
   "dns": {
     "servers": [
       { "type": "https", "tag": "dns-remote", "server": "1.1.1.1", "detour": "proxy" },
@@ -7,7 +11,7 @@
     ],
     "rules": [
 {% if dpi_bypass_domains %}
-      { "domain_suffix": {{ dpi_bypass_domains | to_json }}, "server": "dns-local" },
+      { "domain_suffix": {{ dpi_bypass_json }}, "server": "dns-local" },
 {% endif %}
       { "rule_set": "geosite-ru", "server": "dns-local" },
       { "domain_suffix": [".ru"], "server": "dns-local" }
@@ -28,14 +32,51 @@
     }
   ],
   "outbounds": [
+{#
+  Тег "proxy" (на него указывает route.final и download_detour) рендерится в
+  выбранный транспорт leg home->edge. Brutal выключен сознательно: up/down mbps
+  не задаём (ровный паттерн → поведенческий детект). router-in (:8388 SS) на edge
+  остаётся как есть; здесь его как outbound уже не используем.
+#}
+{% if router_primary_transport == 'hysteria2' %}
+    {
+      "type": "hysteria2",
+      "tag": "proxy",
+      "server": "{{ _edge_vps_ip }}",
+      "server_port": {{ hy2_port }},
+      "password": "{{ hy2_password }}",
+      "obfs": {
+        "type": "salamander",
+        "password": "{{ hy2_obfs_password }}"
+      },
+      "tls": {
+        "enabled": true,
+        "server_name": "{{ domain }}",
+        "alpn": ["h3"]
+      }
+    },
+{% elif router_primary_transport == 'shadowtls' %}
+    {
+      "type": "shadowtls",
+      "tag": "shadowtls-out",
+      "server": "{{ _edge_vps_ip }}",
+      "server_port": {{ shadowtls_port }},
+      "version": 3,
+      "password": "{{ shadowtls_password }}",
+      "tls": {
+        "enabled": true,
+        "server_name": "{{ shadowtls_handshake_server }}",
+        "utls": { "enabled": true, "fingerprint": "chrome" }
+      }
+    },
     {
       "type": "shadowsocks",
       "tag": "proxy",
-      "server": "{{ _edge_vps_ip }}",
-      "server_port": {{ router_ss_port }},
-      "method": "{{ router_ss_method }}",
-      "password": "{{ router_ss_secret }}"
+      "method": "{{ shadowtls_ss_method }}",
+      "password": "{{ shadowtls_ss_secret }}",
+      "detour": "shadowtls-out"
     },
+{% endif %}
     { "type": "direct", "tag": "direct" },
     { "type": "block",  "tag": "block" },
     {
@@ -50,18 +91,18 @@
       { "protocol": "dns", "action": "hijack-dns" },
       { "ip_is_private": true, "outbound": "direct" },
 {% if dpi_bypass_domains %}
-      { "domain_suffix": {{ dpi_bypass_domains | to_json }}, "network": "udp", "port": 443, "outbound": "block" },
-      { "domain_suffix": {{ dpi_bypass_domains | to_json }}, "outbound": "dpi-bypass-direct" },
+      { "domain_suffix": {{ dpi_bypass_json }}, "network": "udp", "port": 443, "outbound": "block" },
+      { "domain_suffix": {{ dpi_bypass_json }}, "outbound": "dpi-bypass-direct" },
 {% endif %}
       { "rule_set": ["geosite-ru", "geoip-ru"], "outbound": "direct" }
     ],
     "rule_set": [
       { "type": "remote", "tag": "geosite-ru", "format": "binary",
         "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-ru.srs",
-        "download_detour": "direct" },
+        "download_detour": "proxy" },
       { "type": "remote", "tag": "geoip-ru", "format": "binary",
         "url": "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-ru.srs",
-        "download_detour": "direct" }
+        "download_detour": "proxy" }
     ],
     "final": "proxy",
     "default_domain_resolver": { "server": "dns-local", "strategy": "ipv4_only" },

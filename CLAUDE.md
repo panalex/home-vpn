@@ -44,7 +44,7 @@ Two VPS nodes + one GL-MT6000 router, deployed via two playbooks: `site.yml` (VP
 
 **Gateway VPS** (`de_vps`): egress + VPN concentrator. Runs `ocserv` (OpenConnect/AnyConnect VPN on :443 TCP/UDP), `unbound` (DNS for VPN clients via DoT), `sing-box` (ss-in :4433, restricted by firewall to edge IP only). VPN subnet: `10.99.0.0/24`, DNS: `10.99.0.1`.
 
-**Router** (`routers`): GL-MT6000 with OpenWrt + `sing-box` TUN (`singtun0`). Split routing (by sniffed SNI + geoip): RU IPs/domains go direct, everything else (incl. RKN-blocked sites by default) tunnels to gateway via SS2022 :8388. `dpi_bypass_domains` (default empty) is an opt-in third category: listed domains go direct WAN + nfqws DPI-desync instead of the tunnel. Split-DNS: `*.ru` + `geosite-ru` + `dpi_bypass_domains` resolve via Yandex **DoT** (`dns-local`, anti-spoofing, direct WAN); **everything else resolves via DoH over the tunnel** (`dns-remote` = 1.1.1.1, `detour: proxy`) — real IPs resolved at the gateway, no FakeIP. A cron watchdog (`/usr/bin/singbox-watchdog`) restarts `sing-box` if the process dies.
+**Router** (`routers`): GL-MT6000 with OpenWrt + `sing-box` TUN (`singtun0`). Split routing (by sniffed SNI + geoip): RU IPs/domains go direct, everything else (incl. RKN-blocked sites by default) tunnels to gateway via the `proxy` outbound. **The home→edge leg transport is selectable via `router_primary_transport`** (`hysteria2` | `shadowtls`) — raw SS2022 `router-in` :8388 was getting cut by the ISP TSPU (TCP handshake passes, first ciphertext block dropped → blackhole), so two new always-on inbounds were added on edge: `hy2-in` (hysteria2 over QUIC/UDP + obfs salamander, primary) and `shadowtls-in` (shadowtls v3 → internal SS2022, TCP fallback). Both route into the existing `de-ss` chain on edge. The router renders only the active outbound as tag `proxy`; switching transport = change the var + redeploy the router only (edge keeps both inbounds always). Brutal is intentionally OFF (no `up_mbps`/`down_mbps`) — fixed-rate CC produces an anomalous flat traffic pattern that aids behavioral detection. `dpi_bypass_domains` (default empty) is an opt-in third category: listed domains go direct WAN + nfqws DPI-desync instead of the tunnel. Split-DNS: `*.ru` + `geosite-ru` + `dpi_bypass_domains` resolve via Yandex **DoT** (`dns-local`, anti-spoofing, direct WAN); **everything else resolves via DoH over the tunnel** (`dns-remote` = 1.1.1.1, `detour: proxy`) — real IPs resolved at the gateway, no FakeIP. A cron watchdog (`/usr/bin/singbox-watchdog`) restarts `sing-box` if the process dies.
 
 ## Key design decisions
 
@@ -70,7 +70,11 @@ Two VPS nodes + one GL-MT6000 router, deployed via two playbooks: `site.yml` (VP
 
 All secrets and host-specific config live in `group_vars/all.yml` (gitignored). Key vars:
 - `singbox_server_password` — SS2022 secret for edge→gateway chain (base64, 32 bytes)
-- `router_ss_secret` — separate SS2022 secret for router→gateway (do not reuse the chain secret)
+- `router_ss_secret` — separate SS2022 secret for the legacy router→edge SS2022 `router-in` :8388 (do not reuse the chain secret)
+- `router_primary_transport` — active home→edge transport on the router: `hysteria2` (default) | `shadowtls`. Edge always listens on both; switching = change this var + `ansible-playbook -i inventory.ini router.yml`
+- `hy2_port` / `hy2_password` / `hy2_obfs_password` — hysteria2 inbound (edge) / outbound (router). UDP. TLS uses the edge LE cert (`/etc/letsencrypt/live/{{ domain }}/`); obfs salamander. No `up_mbps`/`down_mbps` (Brutal off, by design)
+- `shadowtls_port` / `shadowtls_password` / `shadowtls_handshake_server` — shadowtls v3 (TCP fallback). `shadowtls_handshake_server` is the masquerade TLS1.3 site, shared by edge `handshake.server` and router `tls.server_name`
+- `shadowtls_ss_method` / `shadowtls_ss_secret` — internal SS2022 under shadowtls (NEW key — not `router_ss_secret`, not the :4433 chain secret)
 - `vpn_users` — list of `{name, password}` for both VPN and proxy
 - `ocserv_domain` / `ocserv_acme_email` — gateway domain (must resolve to gateway IP before first run)
 - `tgproxy_domain` — subdomain for Telegram API reverse proxy (default: `tapi.home12.ru`; must resolve to edge IP before first run)

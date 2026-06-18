@@ -32,6 +32,33 @@
     validate: '/usr/bin/sing-box check -c %s'
   notify: Restart sing-box
 
+# sing-box (root) читает LE cert/key напрямую из /etc/letsencrypt/live; hysteria2
+# и shadowtls грузят серт ОДИН раз при старте и сами не следят за его обновлением.
+# certbot.timer обновляет серт молча — без рестарта sing-box продолжил бы отдавать
+# старый. Drop-in deploy-hook рестартит sing-box при обновлении именно edge-домена
+# (RENEWED_LINEAGE), по аналогии с deploy-hook nginx у ru_letsencrypt.
+- name: Ensure certbot deploy-hook directory exists
+  ansible.builtin.file:
+    path: /etc/letsencrypt/renewal-hooks/deploy
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install sing-box cert-renew deploy hook
+  ansible.builtin.copy:
+    dest: /etc/letsencrypt/renewal-hooks/deploy/restart-sing-box.sh
+    owner: root
+    group: root
+    mode: '0755'
+    content: |
+      #!/bin/sh
+      # Managed by Ansible (ru_singbox): перезапустить sing-box, чтобы hysteria2/
+      # shadowtls подхватили обновлённый LE-серт edge-домена.
+      case "$RENEWED_LINEAGE" in
+        */{{ domain }}) systemctl restart sing-box ;;
+      esac
+
 - name: Enable and start sing-box on RU
   ansible.builtin.systemd:
     name: sing-box

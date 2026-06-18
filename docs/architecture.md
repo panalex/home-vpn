@@ -117,6 +117,9 @@ sequenceDiagram
 | 22 | TCP | public | sshd | управление |
 | 80 | TCP | public | nginx/certbot | ACME HTTP-01 |
 | 443 | TCP | public | mtg/nginx | Telegram MTProto FakeTLS / fronting |
+| 8388 | TCP/UDP | public | sing-box `router-in` | legacy SS2022 leg home→edge (режется ТСПУ) |
+| 39443 | UDP | public | sing-box `hy2-in` | leg home→edge **primary**: hysteria2 + obfs salamander (LE-серт edge) |
+| 8843 | TCP | public | sing-box `shadowtls-in` | leg home→edge **fallback**: shadowtls v3 → внутр. SS2022 |
 | 1080 | TCP | loopback | sing-box | локальный HTTP proxy |
 | 1081 | TCP | loopback | sing-box | локальный SOCKS proxy |
 | 2080 | TCP | public | sing-box | HTTP proxy с auth |
@@ -209,9 +212,21 @@ Firewall реализован через nftables.
 |---|---|---|
 | RU IP / geosite-ru | sing-box `geoip:ru`, `geosite:ru` | прямой WAN (без туннеля) |
 | `dpi_bypass_domains` (опц., по умолч. пусто) | sing-box → `dpi-bypass-direct` outbound с `routing_mark` | прямой WAN + nfqws NFQUEUE десинхронизация |
-| всё остальное (вкл. заблокированные сайты по умолчанию) | sing-box → SS2022 outbound | туннель до gateway VPS |
+| всё остальное (вкл. заблокированные сайты по умолчанию) | sing-box → outbound `proxy` | туннель до gateway VPS (через edge) |
 
 `dpi_bypass_domains` и `nfqws_routing_mark` задаются в `group_vars/all.yml`. По умолчанию `dpi_bypass_domains: []` — РКН-заблокированные сайты (youtube, instagram, x.com…) идут через туннель. nfqws-direct (средняя строка) — opt-in для отдельных доменов: экономит bandwidth туннеля и сохраняет RU-CDN-локацию, но требует рабочей стратегии десинхронизации под конкретный ТСПУ.
+
+### Транспорт leg home→edge
+
+Категория `proxy` (туннель) физически идёт роутер → **edge** одним из транспортов, и уже на edge все они маршрутизируются в существующий outbound `de-ss` (цепочка edge → gateway, SS2022 :4433). Транспорт первого хопа выбирается переменной `router_primary_transport`; **edge всегда слушает оба** новых inbound, поэтому переключение — смена переменной + `ansible-playbook router.yml` (edge не трогаем).
+
+| `router_primary_transport` | Транспорт первого хопа (роутер → edge) | Порт на edge | Маскировка | Назначение |
+|---|---|---|---|---|
+| `hysteria2` (по умолчанию) | hysteria2 поверх QUIC/UDP | `hy2_port` 39443/udp | obfs salamander + TLS на LE-серте edge | **primary** — TCP-ориентированный ТСПУ не разбирает QUIC-поток |
+| `shadowtls` | shadowtls v3 → внутренний SS2022 (detour) | `shadowtls_port` 8843/tcp | TLS1.3-хендшейк к `shadowtls_handshake_server` | **fallback** — если провайдер режет UDP/QUIC |
+| — (legacy) | «голый» SS2022 `router-in` | `router_ss_port` 8388/tcp | нет | оставлен как есть; режется ТСПУ по поведению/JA3 (первый шифроблок дропается) |
+
+Brutal **выключен сознательно**: `up_mbps`/`down_mbps` не задаются ни на edge, ни на роутере — на стабильном канале фиксированная полоса даёт аномально ровный паттерн, отдельный признак для поведенческого детекта. На edge все три inbound (`router-in`, `hy2-in`, `shadowtls-ss-in`) сведены в одно route-правило → `de-ss`. hysteria2 TLS использует тот же LE-серт edge, что nginx/mtg; certbot deploy-hook рестартит sing-box при обновлении серта. Требуется sing-box ≥ 1.12 на роутере (apk) — hysteria2 и shadowtls v3 поддержаны.
 
 ### Split-DNS на роутере
 
