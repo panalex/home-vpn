@@ -35,8 +35,8 @@ flowchart LR
 
     U4 -->|all traffic via TUN| FL
     FL -->|RU IP/domains| NET
-    FL -.->|dpi_bypass_domains: direct + nfqws (опц., по умолч. пусто)| NET
-    FL ==>|non-RU: hysteria2 obfs UDP :39443 (active)| RU
+    FL -.->|dpi_bypass_domains: direct + nfqws — опц., по умолч. пусто| NET
+    FL ==>|non-RU: hysteria2 obfs UDP :39443 — active| RU
     FL -.->|fallback: shadowtls v3 TCP :8843 — edge готов, роутер 2-й проход| RU
     FL -.->|legacy SS2022 :8388 — режется ТСПУ| RU
     U2 -->|HTTP proxy auth| RU
