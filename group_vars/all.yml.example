@@ -272,3 +272,17 @@ nfqws_args: >-
 # URL: https://github.com/bol-van/zapret/releases/download/v{{ nfqws_version }}/zapret-v{{ nfqws_version }}.tar.gz
 # Проверь актуальный тег: https://github.com/bol-van/zapret/releases
 nfqws_version: "72.1"
+
+# =============================================================================
+# Reverse SSH management tunnel (de_mgmt + owrt_mgmt)
+# =============================================================================
+# Роутер за CGNAT/ТСПУ недостижим снаружи → ОН сам держит `ssh -R` к гейтвею
+# ЧЕРЕЗ существующий sing-box-тоннель (dst = заграничный IP гейтвея → proxy/hy2,
+# ТСПУ видит лишь QUIC). С гейтвея потом:
+#   ssh -p {{ mgmt_reverse_port }} root@127.0.0.1   → попадаешь на роутер.
+# Ключевая пара генерится на control node в ./secrets/ (gitignore) при деплое;
+# приватный ключ заливается на роутер, публичный — в authorized_keys {{ mgmt_user }}.
+# У всех переменных есть дефолты в ролях — раскомментируй только для переопределения.
+# mgmt_user: rtun
+# mgmt_reverse_port: 2222
+# mgmt_ssh_key: "{{ playbook_dir }}/secrets/rtun_ed25519"

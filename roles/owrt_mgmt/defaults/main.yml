@@ -1,0 +1,15 @@
+---
+# Reverse SSH management tunnel — роутерная сторона (пара с de_mgmt на гейтвее).
+# Общие значения держим в синхроне с roles/de_mgmt/defaults.
+mgmt_user: rtun
+mgmt_reverse_port: 2222
+mgmt_ssh_key: "{{ playbook_dir }}/secrets/rtun_ed25519"
+
+# Куда роутер стучится по SSH (= публичный SSH гейтвея). Соединение идёт ЧЕРЕЗ
+# тоннель: dst — заграничный IP гейтвея → sing-box route final: proxy → hy2.
+mgmt_gateway_ssh_port: 22
+
+# Детект мёртвого линка: ssh выходит после interval*count тишины,
+# procd respawn'ит и переподключает.
+mgmt_keepalive_interval: 30
+mgmt_keepalive_count: 3

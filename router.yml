@@ -7,3 +7,5 @@
       tags: [owrt_singbox, singbox]
     - role: owrt_nfqws
       tags: [owrt_nfqws, nfqws]
+    - role: owrt_mgmt
+      tags: [owrt_mgmt, mgmt]

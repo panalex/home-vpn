@@ -1,0 +1,12 @@
+# Managed by Ansible (de_mgmt) — sshd-ограничения для reverse-тоннеля управления.
+Match User {{ mgmt_user }}
+    AllowTcpForwarding remote
+    PermitListen 127.0.0.1:{{ mgmt_reverse_port }}
+    PermitOpen none
+    PermitTTY no
+    X11Forwarding no
+    AllowAgentForwarding no
+    GatewayPorts no
+    # Реапим повисшую сессию, чтобы при реконнекте loopback-порт был свободен.
+    ClientAliveInterval 30
+    ClientAliveCountMax 3

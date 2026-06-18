@@ -2,6 +2,7 @@
 inventory.ini
 group_vars/all.yml
 host_vars/*.yml
+secrets/
 *.vault
 .vault_pass
 .env

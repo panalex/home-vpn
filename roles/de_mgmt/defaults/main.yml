@@ -1,0 +1,14 @@
+---
+# Reverse SSH management tunnel — общие переменные (gateway + router).
+# Роутер за CGNAT/ТСПУ недостижим снаружи, поэтому ОН инициирует `ssh -R` к
+# гейтвею ЧЕРЕЗ существующий sing-box-тоннель (публичный IP гейтвея — заграничный
+# → sing-box гонит его через `proxy`/hy2, ТСПУ видит только QUIC). На гейтвее
+# появляется loopback-порт, проброшенный на :22 роутера:
+#   ssh -p {{ mgmt_reverse_port }} root@127.0.0.1   → попадаешь на роутер.
+mgmt_user: rtun
+mgmt_reverse_port: 2222
+
+# Ключевая пара для тоннеля генерится на control node и НЕ коммитится (secrets/ в
+# .gitignore). Приватный ключ заливается на роутер, публичный — в authorized_keys
+# пользователя {{ mgmt_user }} на гейтвее.
+mgmt_ssh_key: "{{ playbook_dir }}/secrets/rtun_ed25519"

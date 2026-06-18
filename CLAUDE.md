@@ -33,6 +33,10 @@ ansible-playbook -i inventory.ini router.yml --tags owrt_nfqws
 # Edge inbounds for the home→edge leg (hy2-in/shadowtls-in) + firewall
 ansible-playbook -i inventory.ini site.yml --tags ru_singbox,firewall
 
+# Reverse-SSH management tunnel — gateway side then router side
+ansible-playbook -i inventory.ini site.yml   --tags de_mgmt
+ansible-playbook -i inventory.ini router.yml --tags owrt_mgmt
+
 # Users + edge sing-box only (fastest for user sync)
 ansible-playbook -i inventory.ini site.yml --tags users,ru_singbox
 
@@ -70,6 +74,10 @@ Two VPS nodes + one GL-MT6000 router, deployed via two playbooks: `site.yml` (VP
 **Caveat — Yandex DoT censors Meta**: queried from the router's RU IP (`dns-local`, direct WAN), Yandex returns **NXDOMAIN** for Meta domains (`instagram.com`/`facebook.com`/`cdninstagram.com`/`fbcdn.net`) per RKN — DoT prevents on-path spoofing, not the resolver's own policy. So Meta domains must NOT sit in `dpi_bypass_domains` with `dns-local` resolution: either let them go through the tunnel (`final: proxy`, resolved at the gateway — the default since `dpi_bypass_domains: []`), or resolve them via `dns-remote` if kept on nfqws-direct. Symptom of the misconfig: `DNS_PROBE_FINISHED_NXDOMAIN` in the browser.
 
 **Router fail-open + watchdog (no hard kill-switch)**: a hard kill-switch was rejected for a home network. Tunnel-down ≠ sing-box-down: while sing-box is alive, `direct`/`dpi-bypass-direct` (RU + zapret) keep working and only the `final: proxy` (geo-blocked) category fails — and it fails closed at the app level (no leak), no firewall rule needed. The only leak window is a rare process crash, which a 1-minute cron watchdog (`router_singbox_watchdog`) recovers automatically. `mtu_fix: '1'` on the `proxy` zone clamps MSS for TCP inside the tunnel.
+
+**Reverse-SSH management tunnel (`de_mgmt` + `owrt_mgmt`)**: the router is behind CGNAT/TSPU with no inbound reachability, so to reach it *from* a VPS the router must initiate. It runs a persistent `ssh -R 127.0.0.1:{{ mgmt_reverse_port }}:127.0.0.1:22` to the **gateway**, supervised by procd (`/etc/init.d/mgmt-tunnel`, infinite respawn; `ServerAlive*` + `ExitOnForwardFailure` detect a dead link). The gateway was chosen over the edge for two reasons: (1) the router already reaches it through the existing tunnel — the gateway's public IP is foreign, so sing-box routes the ssh via `proxy`/hy2 and TSPU sees only QUIC (a direct WG/SSH to the gateway would likely be cut like SS2022 was); (2) terminating on the edge and routing it through the hy2 tunnel (which itself lands on the edge) would be a **loop**. From the gateway: `ssh -p {{ mgmt_reverse_port }} root@127.0.0.1`. The `rtun` user on the gateway is `nologin` and its key is `restrict,port-forwarding`; a `Match User rtun` sshd drop-in caps it to `PermitListen 127.0.0.1:<port>` and reaps dead sessions via `ClientAlive*` so the loopback port is free on reconnect. The keypair is generated on the control node into `./secrets/` (gitignored) so playbook order (`site.yml`→`router.yml`) doesn't matter. **Tradeoff accepted**: the channel rides the data-plane tunnel, so it shares fate with router sing-box. A full out-of-band channel (separate obfuscated transport + routing carve-out + own watchdog) was rejected as ~3× the surface, against the project's "no over-debugged roles" lesson; the lockout risk it would cover (self-inflicted bad config) is instead handled by the rollback-guard below.
+
+**Router rollback-guard (`/usr/bin/singbox-guard`)**: deploying a config that crash-loops sing-box is the one failure the watchdog can't fix (and it takes the management tunnel down with it). The guard is the single (re)start entry point — used by the `restart sing-box` handler **and** the watchdog: it `sing-box check`s the config, restarts, and if the process doesn't come up it restores `config.json.lkg` (last-known-good) and restarts; every successful start re-snapshots LKG. Deploys also stage to `config.json.new` and validate it **before** overwriting the live config, so a known-bad config never disrupts a working tunnel; the play fails fast instead. "Up" = process alive (fail-open semantics: sing-box alive ⇒ RU/zapret work, only geo-blocked category fails, no leak).
 
 **tgproxy gost bridge**: nginx cannot `proxy_pass` via SOCKS5 natively. `gost` (single static binary) listens on `127.0.0.1:9443` and dials `api.telegram.org:443` through sing-box SOCKS `127.0.0.1:1081`. nginx uses `proxy_ssl_server_name on` + `proxy_ssl_name api.telegram.org` so that TLS SNI is correct even though the TCP connection goes to localhost. mtg domain-fronting forwards all non-Telegram :443 traffic to `127.0.0.1:8443` as raw TCP; nginx does SNI-based virtual hosting there, so no firewall changes are needed.
 
@@ -116,6 +124,14 @@ nslookup instagram.com 127.0.0.1          # default (dpi_bypass_domains=[]): REA
                                           # if on nfqws-direct via dns-local: would be NXDOMAIN (Yandex censors Meta) — see caveat
 crontab -l | grep singbox-watchdog         # watchdog installed
 uci show firewall | grep mtu_fix           # MSS clamp on proxy zone
+ls -l /etc/sing-box/config.json.lkg        # rollback-guard last-known-good snapshot exists
+/etc/init.d/mgmt-tunnel status             # reverse-SSH tunnel running (procd)
+```
+
+Gateway — reach the router through the reverse tunnel:
+```bash
+ss -lnt | grep 127.0.0.1:2222              # rtun reverse port bound (loopback only)
+ssh -p 2222 root@127.0.0.1                 # lands on the router
 ```
 
 Edge — confirm the home→edge leg inbounds are listening:

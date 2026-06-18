@@ -82,16 +82,43 @@
   loop: "{{ owrt_rule_sets }}"
   notify: restart sing-box
 
-# --- config.json: рендер шаблона на control node, заливка как content ---
+# --- rollback-guard: единая точка (пере)старта sing-box ---------------------
+# Битый/невалидный config.json — единственный сценарий, из которого watchdog не
+# вытащит (crash-loop), а вместе с sing-box ложится и канал управления (owrt_mgmt
+# едет внутри тоннеля). Guard это закрывает: валидирует конфиг, стартует, и если
+# процесс НЕ поднялся — откатывает на last-known-good (config.json.lkg) и
+# рестартует. На каждом успешном старте LKG обновляется. Сюда же ходят handler
+# "restart sing-box" и watchdog — поэтому откат работает и при деплое, и при крахе.
+- name: install sing-box rollback-guard
+  community.openwrt.copy:
+    content: "{{ lookup('template', 'singbox-guard.j2') }}"
+    dest: /usr/bin/singbox-guard
+    mode: '0755'
+
+# --- config.json: рендер шаблона на control node, валидация ДО подмены живого --
 - name: resolve edge VPS IP
   set_fact:
     _edge_vps_ip: "{{ hostvars[groups['ru_vps'][0]]['ansible_host'] | default(groups['ru_vps'][0]) }}"
 
-- name: sing-box config
+# Пишем в staging-файл и проверяем `sing-box check` ПРЕЖДЕ чем тронуть рабочий
+# config.json — заведомо битый конфиг не должен ронять живой тоннель. Реальная
+# подмена только после успешной проверки; промоут и рестарт — лишь при изменении.
+- name: stage sing-box config
   community.openwrt.copy:
     content: "{{ lookup('template', 'config.json.j2') }}"
-    dest: /etc/sing-box/config.json
+    dest: /etc/sing-box/config.json.new
     mode: '0600'
+  register: _sb_cfg
+
+- name: validate staged sing-box config
+  community.openwrt.command:
+    cmd: sing-box check -c /etc/sing-box/config.json.new
+  changed_when: false
+
+- name: promote sing-box config
+  community.openwrt.command:
+    cmd: /bin/sh -c "cp /etc/sing-box/config.json.new /etc/sing-box/config.json"
+  when: _sb_cfg is changed
   notify: restart sing-box
 
 # --- watchdog: автоперезапуск sing-box при падении процесса (fail-open) ---
@@ -102,8 +129,9 @@
   community.openwrt.copy:
     content: |
       #!/bin/sh
-      # Managed by Ansible — поднять sing-box, если процесс умер.
-      pidof sing-box >/dev/null 2>&1 || /etc/init.d/sing-box restart
+      # Managed by Ansible — процесс умер? Поднимаем через guard, чтобы битый
+      # конфиг откатился на LKG, а не крутился в crash-loop.
+      pidof sing-box >/dev/null 2>&1 || /usr/bin/singbox-guard
     dest: /usr/bin/singbox-watchdog
     mode: '0755'
   when: router_singbox_watchdog | bool

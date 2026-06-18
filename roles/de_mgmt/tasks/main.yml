@@ -1,0 +1,53 @@
+---
+# de_mgmt — приёмная сторона reverse-SSH тоннеля управления на гейтвее.
+# Пара с owrt_mgmt (роутер). Ключ генерится на control node, поэтому порядок
+# плейбуков (site.yml → router.yml) роли не играет: обе стороны читают один ключ.
+
+- name: Generate management SSH keypair on control node
+  community.crypto.openssh_keypair:
+    path: "{{ mgmt_ssh_key }}"
+    type: ed25519
+    comment: "home-vpn reverse mgmt tunnel"
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Read management public key
+  ansible.builtin.slurp:
+    src: "{{ mgmt_ssh_key }}.pub"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  register: _mgmt_pubkey
+
+# Системный аккаунт БЕЗ shell: он лишь держит проброшенный порт. Интерактивный
+# вход невозможен (nologin), -N тоннелю shell не нужен.
+- name: Create restricted tunnel user
+  ansible.builtin.user:
+    name: "{{ mgmt_user }}"
+    system: true
+    shell: /usr/sbin/nologin
+    home: "/var/lib/{{ mgmt_user }}"
+    create_home: true
+
+# restrict снимает всё (shell/tty/agent/x11/forwarding), затем возвращаем ровно
+# port-forwarding — ключ не даёт ничего, кроме проброса.
+- name: Authorize router key (port-forwarding only)
+  ansible.posix.authorized_key:
+    user: "{{ mgmt_user }}"
+    key: "{{ _mgmt_pubkey.content | b64decode | trim }}"
+    key_options: 'restrict,port-forwarding'
+    exclusive: true
+
+# Match-блок только для {{ mgmt_user }}: разрешаем лишь remote-forward на
+# loopback:{{ mgmt_reverse_port }}, и ClientAlive реапит мёртвую сессию — иначе
+# при реконнекте порт ещё занят прошлой (повисшей) и -R падает.
+- name: Harden sshd for the tunnel user
+  ansible.builtin.template:
+    src: sshd-mgmt.conf.j2
+    dest: /etc/ssh/sshd_config.d/60-mgmt-tunnel.conf
+    owner: root
+    group: root
+    mode: '0644'
+    validate: '/usr/sbin/sshd -t -f %s'
+  notify: Reload sshd

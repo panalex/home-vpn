@@ -18,6 +18,8 @@
       tags: [de_ocserv, de, ocserv, vpn]
     - role: de_wdtt
       tags: [de_wdtt, de, wdtt]
+    - role: de_mgmt
+      tags: [de_mgmt, de, mgmt]
     - role: firewall
       tags: [firewall, de]
 

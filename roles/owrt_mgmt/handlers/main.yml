@@ -1,0 +1,3 @@
+---
+- name: restart mgmt-tunnel
+  community.openwrt.command: { cmd: /etc/init.d/mgmt-tunnel restart }

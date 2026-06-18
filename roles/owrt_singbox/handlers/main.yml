@@ -3,7 +3,8 @@
   community.openwrt.command: { cmd: /etc/init.d/network reload }
 - name: reload firewall
   community.openwrt.command: { cmd: /etc/init.d/firewall reload }
+# Через guard, а не прямой restart: валидация + откат на LKG при неподъёме.
 - name: restart sing-box
-  community.openwrt.command: { cmd: service sing-box restart }
+  community.openwrt.command: { cmd: /usr/bin/singbox-guard }
 - name: restart cron
   community.openwrt.command: { cmd: /etc/init.d/cron restart }

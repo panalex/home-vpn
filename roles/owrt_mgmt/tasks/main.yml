@@ -1,0 +1,45 @@
+---
+# owrt_mgmt — reverse-SSH тоннель управления (роутерная сторона).
+# Постоянный `ssh -R` к гейтвею ЧЕРЕЗ существующий sing-box-тоннель: публичный IP
+# гейтвея — заграничный, sing-box гонит его через `proxy` (hy2), ТСПУ видит лишь
+# QUIC. procd супервизит (respawn); ServerAlive + ExitOnForwardFailure ловят
+# мёртвый линк и дают procd переподключиться. Пара с de_mgmt на гейтвее.
+#
+# Канал делит судьбу с sing-box (едет внутри тоннеля). Это осознанный размен:
+# краш sing-box поднимает watchdog (~1 мин), а битый конфиг откатывает
+# rollback-guard (см. owrt_singbox) — так локаут себя лечит без второго транспорта.
+
+- name: gather openwrt facts
+  community.openwrt.setup:
+
+- name: packages
+  community.openwrt.apk:
+    name: openssh-client
+    state: present
+
+- name: resolve gateway VPS host
+  ansible.builtin.set_fact:
+    _gw_host: "{{ hostvars[groups['de_vps'][0]]['ansible_host'] | default(groups['de_vps'][0]) }}"
+
+- name: ensure key dir
+  community.openwrt.file:
+    path: /etc/mgmt-ssh
+    state: directory
+
+- name: push management private key
+  community.openwrt.copy:
+    src: "{{ mgmt_ssh_key }}"
+    dest: /etc/mgmt-ssh/id_ed25519
+    mode: '0600'
+  notify: restart mgmt-tunnel
+
+- name: install mgmt-tunnel init script
+  community.openwrt.copy:
+    content: "{{ lookup('template', 'mgmt-tunnel.init.j2') }}"
+    dest: /etc/init.d/mgmt-tunnel
+    mode: '0755'
+  notify: restart mgmt-tunnel
+
+- name: enable mgmt-tunnel on boot
+  community.openwrt.command: { cmd: /etc/init.d/mgmt-tunnel enable }
+  changed_when: false

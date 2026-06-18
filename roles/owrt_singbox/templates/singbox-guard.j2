@@ -1,0 +1,53 @@
+#!/bin/sh
+# Managed by Ansible (owrt_singbox) — единая точка (пере)старта sing-box с
+# валидацией конфига и авто-откатом на last-known-good.
+#
+# Зачем: битый config.json — единственный сценарий, из которого watchdog не
+# вытащит (sing-box крутится в crash-loop), а вместе с TUN ложится и канал
+# управления (owrt_mgmt едет ВНУТРИ тоннеля). Guard гарантирует, что плохой
+# конфиг не оставит процесс мёртвым: не прошёл `check` или не поднялся — откат
+# на LKG. "Поднялся" здесь = процесс жив (fail-open: при живом sing-box RU/zapret
+# работают, падает лишь геоблок-категория — без утечки).
+CFG=/etc/sing-box/config.json
+LKG=/etc/sing-box/config.json.lkg
+log() { logger -t singbox-guard "$1"; }
+
+start_ok() {
+    /etc/init.d/sing-box restart
+    i=0
+    while [ "$i" -lt 5 ]; do
+        sleep 1
+        pidof sing-box >/dev/null 2>&1 && return 0
+        i=$((i + 1))
+    done
+    return 1
+}
+
+rollback() {
+    if [ -f "$LKG" ]; then
+        cp "$LKG" "$CFG"
+        if start_ok; then
+            log "rolled back to LKG, sing-box up"
+        else
+            log "ROLLBACK FAILED — sing-box down"
+        fi
+    else
+        log "no LKG snapshot to roll back to — sing-box down"
+    fi
+    return 1
+}
+
+if ! sing-box check -c "$CFG" >/dev/null 2>&1; then
+    log "config FAILED validation — rolling back"
+    rollback
+    exit $?
+fi
+
+if start_ok; then
+    cp "$CFG" "$LKG"   # снимок known-good
+    exit 0
+fi
+
+log "config valid but sing-box did NOT come up — rolling back"
+rollback
+exit $?
