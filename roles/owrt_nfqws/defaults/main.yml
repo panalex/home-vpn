@@ -7,3 +7,7 @@
 # Переопределяется в group_vars/all.yml; синхронизируй с --dpi-desync-fwmark,
 # если меняешь его в nfqws_args.
 nfqws_fwmark: "0x40000000"
+
+# Отключать ли HW flow offload (SW offload гасим всегда — он ломает десинк).
+# На GL-MT6000 HW-offload тоже шунтирует NFQUEUE; по умолчанию выключаем.
+owrt_disable_hw_offload: true
