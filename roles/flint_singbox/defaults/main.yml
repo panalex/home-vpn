@@ -11,3 +11,16 @@ ru_dns_dot_sni: "common.dot.dns.yandex.net"
 # отваливается сама (app-level fail-closed, без утечки). Watchdog страхует лишь
 # редкий краш самого процесса: cron раз в минуту поднимает sing-box обратно.
 router_singbox_watchdog: true
+
+# Geo rule-set'ы возим ЛОКАЛЬНЫМИ файлами (type: local), а не remote с
+# download_detour: proxy. Иначе старт sing-box зависит от живого туннеля: при
+# мёртвом proxy скачивание .srs таймаутит → FATAL → TUN не поднимается → ПОЛНАЯ
+# утечка в RU + watchdog крутит crash-loop (ломает весь принцип fail-open).
+# Файлы качаются на control node при деплое и заливаются на роутер; обновляются
+# при каждом прогоне (geosite/geoip-ru меняются медленно — это приемлемо).
+flint_ruleset_dir: /etc/sing-box/rule-sets
+flint_rule_sets:
+  - tag: geosite-ru
+    url: "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-ru.srs"
+  - tag: geoip-ru
+    url: "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-ru.srs"

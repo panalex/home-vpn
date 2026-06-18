@@ -97,12 +97,11 @@
       { "rule_set": ["geosite-ru", "geoip-ru"], "outbound": "direct" }
     ],
     "rule_set": [
-      { "type": "remote", "tag": "geosite-ru", "format": "binary",
-        "url": "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-ru.srs",
-        "download_detour": "proxy" },
-      { "type": "remote", "tag": "geoip-ru", "format": "binary",
-        "url": "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-ru.srs",
-        "download_detour": "proxy" }
+{# Локальные .srs (залиты Ansible). НЕ remote+download_detour:proxy — иначе старт
+   sing-box висит на живом туннеле и при мёртвом proxy валится в FATAL → утечка. #}
+{% for rs in flint_rule_sets %}
+      { "type": "local", "tag": "{{ rs.tag }}", "format": "binary", "path": "{{ flint_ruleset_dir }}/{{ rs.tag }}.srs" }{{ "," if not loop.last else "" }}
+{% endfor %}
     ],
     "final": "proxy",
     "default_domain_resolver": { "server": "dns-local", "strategy": "ipv4_only" },

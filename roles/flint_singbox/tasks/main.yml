@@ -46,6 +46,30 @@
   community.openwrt.uci: { command: commit }
   notify: [reload network, reload firewall, restart sing-box]
 
+# --- geo rule-set'ы: качаем на control node, заливаем на роутер как ЛОКАЛЬНЫЕ
+#     файлы. Так старт sing-box не зависит от живого туннеля (см. defaults). ---
+- name: download geo rule-sets on control node
+  ansible.builtin.get_url:
+    url: "{{ item.url }}"
+    dest: "/tmp/flint-ruleset-{{ item.tag }}.srs"
+    mode: '0644'
+  loop: "{{ flint_rule_sets }}"
+  delegate_to: localhost
+  run_once: true
+
+- name: ensure rule-set dir on router
+  community.openwrt.file:
+    path: "{{ flint_ruleset_dir }}"
+    state: directory
+
+- name: push geo rule-sets to router
+  community.openwrt.copy:
+    src: "/tmp/flint-ruleset-{{ item.tag }}.srs"
+    dest: "{{ flint_ruleset_dir }}/{{ item.tag }}.srs"
+    mode: '0644'
+  loop: "{{ flint_rule_sets }}"
+  notify: restart sing-box
+
 # --- config.json: рендер шаблона на control node, заливка как content ---
 - name: resolve edge VPS IP
   set_fact:
