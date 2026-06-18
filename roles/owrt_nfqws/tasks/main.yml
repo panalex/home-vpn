@@ -119,6 +119,7 @@
 - name: enable nfqws on boot
   community.openwrt.command:
     cmd: /etc/init.d/nfqws enable
+  changed_when: false
 
 # === 5. nftables NFQUEUE rules (firewall include) ===
 - name: install dpi-bypass firewall script

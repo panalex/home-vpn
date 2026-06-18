@@ -33,13 +33,13 @@
   ],
   "outbounds": [
 {#
-  Тег "proxy" (на него указывает route.final и download_detour) — leg home->edge.
-  ПОКА ТОЛЬКО hysteria2 (UDP/QUIC + obfs salamander): TCP-ориентированный ТСПУ его
-  не видит как поток для DPI-разбора. TLS поверх QUIC валидирует УЖЕ существующий
-  LE-серт edge (tls.server_name = {{ domain }}). shadowtls v3 (TCP-fallback) —
-  отдельным проходом (edge уже слушает shadowtls-in). Brutal ВЫКЛЮЧЕН сознательно:
-  up/down mbps не задаём (ровный паттерн → поведенческий детект). Legacy router-in
-  (:8388 SS) на edge остаётся, но здесь как outbound не используется.
+  Тег "proxy" (на него указывает route.final) — leg home->edge, ПОКА ТОЛЬКО
+  hysteria2 (UDP/QUIC + obfs salamander): TCP-ориентированный ТСПУ не видит его
+  как поток для DPI-разбора. TLS поверх QUIC валидирует УЖЕ существующий LE-серт
+  edge (tls.server_name = {{ domain }}). Brutal ВЫКЛЮЧЕН сознательно: up/down mbps
+  не задаём (ровный паттерн → поведенческий детект). Про shadowtls-fallback и
+  переключатель router_primary_transport — см. assert в tasks/main.yml (единый
+  источник). Legacy router-in (:8388 SS) на edge остаётся, как outbound не нужен.
 #}
     {
       "type": "hysteria2",

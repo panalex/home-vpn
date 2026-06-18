@@ -13,7 +13,7 @@ Ansible-проект для двух VPS и домашнего роутера GL
 - nftables firewall/NAT для обоих VPS-узлов;
 - единый список пользователей для прокси и VPN;
 - WDTT-сервер на gateway: WireGuard через VK TURN / DTLS (:56000), позволяет пробить NAT без проброса портов;
-- sing-box TUN на роутере GL-MT6000 (OpenWrt): трафик домашней сети прозрачно уходит в gateway через Shadowsocks 2022, российские IP/домены идут напрямую;
+- sing-box TUN на роутере GL-MT6000 (OpenWrt, роли `owrt_singbox` + `owrt_nfqws`): трафик домашней сети прозрачно уходит в gateway через edge — первый хоп роутер→edge идёт по **hysteria2** (QUIC/UDP + obfs salamander; «голый» SS2022 leg резался ТСПУ), дальше цепочка edge→gateway; российские IP/домены идут напрямую;
 - `nfqws` (zapret) на роутере: опциональная DPI-десинхронизация для отдельных РКН-заблокированных сайтов с прямым выходом через WAN без туннеля (домены задаются в `dpi_bypass_domains`; по умолчанию список пуст — все заблокированные сайты идут через туннель).
 
 Репозиторий подготовлен для публичной публикации: реальные IP, домены, пароли, `.git`-история и локальные vars исключены. Перед использованием создайте собственные `inventory.ini` и `group_vars/all.yml` из `.example`-файлов.
@@ -79,10 +79,15 @@ cp group_vars/all.yml.example group_vars/all.yml
 - `inventory.ini` — реальные адреса, пользователи SSH, домен edge-узла и email;
 - `group_vars/all.yml` — домен gateway-узла, секрет `sing-box`, пользователи, пароли, порты.
 
-Сгенерировать секрет для Shadowsocks 2022:
+Сгенерировать секреты sing-box — каждый отдельной командой `openssl rand -base64 32`:
 
 ```bash
-openssl rand -base64 32
+openssl rand -base64 32   # singbox_server_password — цепочка edge→gateway (SS2022 :4433)
+openssl rand -base64 32   # router_ss_secret        — legacy SS2022 router-in :8388
+openssl rand -base64 32   # hy2_password            — hysteria2 leg роутер→edge
+openssl rand -base64 32   # hy2_obfs_password       — obfs salamander
+openssl rand -base64 32   # shadowtls_password      — shadowtls v3 (edge готов, роутер 2-й проход)
+openssl rand -base64 32   # shadowtls_ss_secret     — внутр. SS2022 под shadowtls
 ```
 
 Сгенерировать пароли пользователей:

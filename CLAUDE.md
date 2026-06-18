@@ -87,7 +87,7 @@ All secrets and host-specific config live in `group_vars/all.yml` (gitignored). 
 - `tgproxy_domain` — subdomain for Telegram API reverse proxy (default: `tapi.home12.ru`; must resolve to edge IP before first run)
 - `gost_version` — gost v2 binary version (default in role: `2.11.5`)
 - `ru_dns_dot_ip` / `ru_dns_dot_sni` — router RU DNS-over-TLS upstream (defaults in `owrt_singbox/defaults`: `77.88.8.8` / `common.dot.dns.yandex.net`)
-- `owrt_disable_hw_offload` — disable MediaTek HW flow offload on the router so NFQUEUE/nfqws can see packets (default `true` in `group_vars`)
+- `owrt_disable_hw_offload` — disable MediaTek HW flow offload on the router so NFQUEUE/nfqws can see packets (default `true` in `owrt_nfqws/defaults`; also shown in `group_vars/all.yml.example`)
 - `dpi_bypass_domains` — opt-in list of RKN-blocked domains routed direct WAN + nfqws DPI-desync instead of the tunnel (default `[]` → all blocked sites tunnel to gateway). Do not put Meta domains here with `dns-local` resolution (see caveat above). `nfqws_youtube_domains` must be a subset; `nfqws_routing_mark`/`nfqws_queue_num`/`nfqws_fwmark`/`nfqws_args` tune the desync
 - `router_singbox_watchdog` — enable the cron watchdog that restarts router `sing-box` on crash (default in role: `true`)
 
