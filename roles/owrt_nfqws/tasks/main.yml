@@ -57,7 +57,7 @@
     command: set
     key: firewall.@defaults[0].flow_offloading_hw
     value: '0'
-  when: flint_disable_hw_offload | bool
+  when: owrt_disable_hw_offload | bool
   register: _offload_hw_change
 
 - name: commit firewall uci

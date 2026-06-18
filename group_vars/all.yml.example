@@ -81,8 +81,12 @@ shadowtls_handshake_server: "www.microsoft.com"
 shadowtls_ss_method: "2022-blake3-aes-256-gcm"
 shadowtls_ss_secret: "REPLACE_ME_BASE64_32_BYTES"  # openssl rand -base64 32
 
-# Активный транспорт на РОУТЕРЕ: hysteria2 | shadowtls. Edge всегда слушает оба,
-# поэтому переключение — смена этой переменной + ansible-playbook router.yml.
+# Активный транспорт на РОУТЕРЕ. Edge ВСЕГДА слушает оба inbound (hy2-in +
+# shadowtls-in), поэтому переключение — смена этой переменной + редеплой ТОЛЬКО
+# роутера. ВНИМАНИЕ: роль owrt_singbox пока рендерит ТОЛЬКО hysteria2 (1-й проход —
+# «один транспорт solid»); shadowtls-outbound на роутере добавим 2-м проходом,
+# когда hy2 подтверждён рабочим с LAN. До тех пор значение должно быть hysteria2
+# (иначе owrt_singbox упадёт на assert). На edge shadowtls-in уже готов.
 router_primary_transport: hysteria2
 
 # =============================================================================
@@ -190,9 +194,9 @@ ssh_port: 22
 # DPI bypass — nfqws, прямой WAN + десинк для РКН-заблокированных с RU IP
 # =============================================================================
 # MediaTek HW offload обходит netfilter, поэтому NFQUEUE его не видит.
-# flint_disable_hw_offload: true отключает hw offload на роутере (sw остаётся).
+# owrt_disable_hw_offload: true отключает hw offload на роутере (sw остаётся).
 # На 500 Мбит/с при низкой нагрузке потеря скорости некритична.
-flint_disable_hw_offload: true
+owrt_disable_hw_offload: true
 
 # Домены, которые обходят РКН локально (прямой WAN + nfqws-десинк, БЕЗ тоннеля).
 # Всё, чего тут НЕТ и что не RU (geosite-ru/geoip-ru) → уходит в тоннель (final: proxy).
@@ -206,7 +210,7 @@ flint_disable_hw_offload: true
 #
 # Пусто (dpi_bypass_domains: []) → ВСЕ заблокированные сайты идут через тоннель
 # (gateway). Надёжно (мимо nfqws/TSPU и мимо Yandex-цензуры), но youtube грузит
-# bandwidth тоннеля и выходит с DE IP. Шаблон flint_singbox корректно генерит
+# bandwidth тоннеля и выходит с DE IP. Шаблон owrt_singbox корректно генерит
 # конфиг и для пустого списка (правила dpi-bypass просто не добавляются).
 dpi_bypass_domains: []
 # Вариант nfqws-direct (нужен рабочий nfqws + Meta резолвить мимо Yandex):

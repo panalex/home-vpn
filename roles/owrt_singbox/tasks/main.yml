@@ -1,4 +1,16 @@
 ---
+# owrt_singbox — sing-box TUN на роутере OpenWrt (GL-MT6000 / Flint 2).
+# Leg home→edge: ПОКА ТОЛЬКО hysteria2 (UDP/QUIC + obfs salamander). shadowtls v3
+# (TCP-fallback) — отдельным проходом, когда hy2 подтверждён рабочим с LAN; edge
+# уже слушает оба inbound (shadowtls-in), роутеру останется добавить outbound.
+- name: assert router transport is hysteria2 (shadowtls — 2-й проход)
+  ansible.builtin.assert:
+    that: router_primary_transport == 'hysteria2'
+    fail_msg: >-
+      owrt_singbox пока рендерит только hysteria2-транспорт. shadowtls-fallback
+      будет добавлен 2-м проходом. Установи router_primary_transport: hysteria2
+      (edge уже держит shadowtls-in для будущего переключения).
+
 - name: gather openwrt facts
   community.openwrt.setup:
 
@@ -51,23 +63,23 @@
 - name: download geo rule-sets on control node
   ansible.builtin.get_url:
     url: "{{ item.url }}"
-    dest: "/tmp/flint-ruleset-{{ item.tag }}.srs"
+    dest: "/tmp/owrt-ruleset-{{ item.tag }}.srs"
     mode: '0644'
-  loop: "{{ flint_rule_sets }}"
+  loop: "{{ owrt_rule_sets }}"
   delegate_to: localhost
   run_once: true
 
 - name: ensure rule-set dir on router
   community.openwrt.file:
-    path: "{{ flint_ruleset_dir }}"
+    path: "{{ owrt_ruleset_dir }}"
     state: directory
 
 - name: push geo rule-sets to router
   community.openwrt.copy:
-    src: "/tmp/flint-ruleset-{{ item.tag }}.srs"
-    dest: "{{ flint_ruleset_dir }}/{{ item.tag }}.srs"
+    src: "/tmp/owrt-ruleset-{{ item.tag }}.srs"
+    dest: "{{ owrt_ruleset_dir }}/{{ item.tag }}.srs"
     mode: '0644'
-  loop: "{{ flint_rule_sets }}"
+  loop: "{{ owrt_rule_sets }}"
   notify: restart sing-box
 
 # --- config.json: рендер шаблона на control node, заливка как content ---

@@ -33,12 +33,14 @@
   ],
   "outbounds": [
 {#
-  Тег "proxy" (на него указывает route.final и download_detour) рендерится в
-  выбранный транспорт leg home->edge. Brutal выключен сознательно: up/down mbps
-  не задаём (ровный паттерн → поведенческий детект). router-in (:8388 SS) на edge
-  остаётся как есть; здесь его как outbound уже не используем.
+  Тег "proxy" (на него указывает route.final и download_detour) — leg home->edge.
+  ПОКА ТОЛЬКО hysteria2 (UDP/QUIC + obfs salamander): TCP-ориентированный ТСПУ его
+  не видит как поток для DPI-разбора. TLS поверх QUIC валидирует УЖЕ существующий
+  LE-серт edge (tls.server_name = {{ domain }}). shadowtls v3 (TCP-fallback) —
+  отдельным проходом (edge уже слушает shadowtls-in). Brutal ВЫКЛЮЧЕН сознательно:
+  up/down mbps не задаём (ровный паттерн → поведенческий детект). Legacy router-in
+  (:8388 SS) на edge остаётся, но здесь как outbound не используется.
 #}
-{% if router_primary_transport == 'hysteria2' %}
     {
       "type": "hysteria2",
       "tag": "proxy",
@@ -55,28 +57,6 @@
         "alpn": ["h3"]
       }
     },
-{% elif router_primary_transport == 'shadowtls' %}
-    {
-      "type": "shadowtls",
-      "tag": "shadowtls-out",
-      "server": "{{ _edge_vps_ip }}",
-      "server_port": {{ shadowtls_port }},
-      "version": 3,
-      "password": "{{ shadowtls_password }}",
-      "tls": {
-        "enabled": true,
-        "server_name": "{{ shadowtls_handshake_server }}",
-        "utls": { "enabled": true, "fingerprint": "chrome" }
-      }
-    },
-    {
-      "type": "shadowsocks",
-      "tag": "proxy",
-      "method": "{{ shadowtls_ss_method }}",
-      "password": "{{ shadowtls_ss_secret }}",
-      "detour": "shadowtls-out"
-    },
-{% endif %}
     { "type": "direct", "tag": "direct" },
     { "type": "block",  "tag": "block" },
     {
@@ -99,8 +79,8 @@
     "rule_set": [
 {# Локальные .srs (залиты Ansible). НЕ remote+download_detour:proxy — иначе старт
    sing-box висит на живом туннеле и при мёртвом proxy валится в FATAL → утечка. #}
-{% for rs in flint_rule_sets %}
-      { "type": "local", "tag": "{{ rs.tag }}", "format": "binary", "path": "{{ flint_ruleset_dir }}/{{ rs.tag }}.srs" }{{ "," if not loop.last else "" }}
+{% for rs in owrt_rule_sets %}
+      { "type": "local", "tag": "{{ rs.tag }}", "format": "binary", "path": "{{ owrt_ruleset_dir }}/{{ rs.tag }}.srs" }{{ "," if not loop.last else "" }}
 {% endfor %}
     ],
     "final": "proxy",

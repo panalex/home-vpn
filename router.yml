@@ -1,6 +1,9 @@
 - hosts: routers
   gather_facts: false
   roles:
-    - community.openwrt.init
-    - flint_singbox
-    - flint_nfqws
+    - role: community.openwrt.init
+      tags: [owrt_init]
+    - role: owrt_singbox
+      tags: [owrt_singbox, singbox]
+    - role: owrt_nfqws
+      tags: [owrt_nfqws, nfqws]

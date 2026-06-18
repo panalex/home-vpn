@@ -26,6 +26,13 @@ ansible-playbook -i inventory.ini site.yml
 # Router only
 ansible-playbook -i inventory.ini router.yml
 
+# Router sing-box only (transport changes) / nfqws only
+ansible-playbook -i inventory.ini router.yml --tags owrt_singbox
+ansible-playbook -i inventory.ini router.yml --tags owrt_nfqws
+
+# Edge inbounds for the home→edge leg (hy2-in/shadowtls-in) + firewall
+ansible-playbook -i inventory.ini site.yml --tags ru_singbox,firewall
+
 # Users + edge sing-box only (fastest for user sync)
 ansible-playbook -i inventory.ini site.yml --tags users,ru_singbox
 
@@ -44,7 +51,7 @@ Two VPS nodes + one GL-MT6000 router, deployed via two playbooks: `site.yml` (VP
 
 **Gateway VPS** (`de_vps`): egress + VPN concentrator. Runs `ocserv` (OpenConnect/AnyConnect VPN on :443 TCP/UDP), `unbound` (DNS for VPN clients via DoT), `sing-box` (ss-in :4433, restricted by firewall to edge IP only). VPN subnet: `10.99.0.0/24`, DNS: `10.99.0.1`.
 
-**Router** (`routers`): GL-MT6000 with OpenWrt + `sing-box` TUN (`singtun0`). Split routing (by sniffed SNI + geoip): RU IPs/domains go direct, everything else (incl. RKN-blocked sites by default) tunnels to gateway via the `proxy` outbound. **The home→edge leg transport is selectable via `router_primary_transport`** (`hysteria2` | `shadowtls`) — raw SS2022 `router-in` :8388 was getting cut by the ISP TSPU (TCP handshake passes, first ciphertext block dropped → blackhole), so two new always-on inbounds were added on edge: `hy2-in` (hysteria2 over QUIC/UDP + obfs salamander, primary) and `shadowtls-in` (shadowtls v3 → internal SS2022, TCP fallback). Both route into the existing `de-ss` chain on edge. The router renders only the active outbound as tag `proxy`; switching transport = change the var + redeploy the router only (edge keeps both inbounds always). Brutal is intentionally OFF (no `up_mbps`/`down_mbps`) — fixed-rate CC produces an anomalous flat traffic pattern that aids behavioral detection. `dpi_bypass_domains` (default empty) is an opt-in third category: listed domains go direct WAN + nfqws DPI-desync instead of the tunnel. Split-DNS: `*.ru` + `geosite-ru` + `dpi_bypass_domains` resolve via Yandex **DoT** (`dns-local`, anti-spoofing, direct WAN); **everything else resolves via DoH over the tunnel** (`dns-remote` = 1.1.1.1, `detour: proxy`) — real IPs resolved at the gateway, no FakeIP. A cron watchdog (`/usr/bin/singbox-watchdog`) restarts `sing-box` if the process dies.
+**Router** (`routers`): GL-MT6000 with OpenWrt + `sing-box` TUN (`singtun0`), deployed by the **`owrt_singbox`** + **`owrt_nfqws`** roles (the previous `flint_*` roles were dropped — over-debugged and unreliable; rebuilt clean as `owrt_*`). Split routing (by sniffed SNI + geoip): RU IPs/domains go direct, everything else (incl. RKN-blocked sites by default) tunnels to gateway via the `proxy` outbound. **The home→edge leg uses hysteria2** — raw SS2022 `router-in` :8388 was getting cut by the ISP TSPU (TCP handshake passes, first ciphertext block dropped → blackhole), so edge now exposes two always-on inbounds: `hy2-in` (hysteria2 over QUIC/UDP + obfs salamander, **primary**) and `shadowtls-in` (shadowtls v3 → internal SS2022, TCP fallback). Both route into the existing `de-ss` chain on edge. **First pass is hysteria2-only on the router**: `owrt_singbox` renders just the hysteria2 outbound as tag `proxy` and asserts `router_primary_transport == hysteria2`; the shadowtls outbound on the router is a planned 2nd pass (edge already listens on `shadowtls-in`, so switching later = add the outbound + redeploy the router only, edge untouched). Brutal is intentionally OFF (no `up_mbps`/`down_mbps`) — fixed-rate CC produces an anomalous flat traffic pattern that aids behavioral detection. `dpi_bypass_domains` (default empty) is an opt-in third category: listed domains go direct WAN + nfqws DPI-desync instead of the tunnel. Split-DNS: `*.ru` + `geosite-ru` + `dpi_bypass_domains` resolve via Yandex **DoT** (`dns-local`, anti-spoofing, direct WAN); **everything else resolves via DoH over the tunnel** (`dns-remote` = 1.1.1.1, `detour: proxy`) — real IPs resolved at the gateway, no FakeIP. A cron watchdog (`/usr/bin/singbox-watchdog`) restarts `sing-box` if the process dies.
 
 ## Key design decisions
 
@@ -71,15 +78,16 @@ Two VPS nodes + one GL-MT6000 router, deployed via two playbooks: `site.yml` (VP
 All secrets and host-specific config live in `group_vars/all.yml` (gitignored). Key vars:
 - `singbox_server_password` — SS2022 secret for edge→gateway chain (base64, 32 bytes)
 - `router_ss_secret` — separate SS2022 secret for the legacy router→edge SS2022 `router-in` :8388 (do not reuse the chain secret)
-- `router_primary_transport` — active home→edge transport on the router: `hysteria2` (default) | `shadowtls`. Edge always listens on both; switching = change this var + `ansible-playbook -i inventory.ini router.yml`
+- `router_primary_transport` — intended active home→edge transport on the router. Edge always listens on both inbounds; **for now `owrt_singbox` only implements `hysteria2`** and asserts this var equals `hysteria2` (shadowtls outbound on the router is a planned 2nd pass). Keep it `hysteria2` until then
 - `hy2_port` / `hy2_password` / `hy2_obfs_password` — hysteria2 inbound (edge) / outbound (router). UDP. TLS uses the edge LE cert (`/etc/letsencrypt/live/{{ domain }}/`); obfs salamander. No `up_mbps`/`down_mbps` (Brutal off, by design)
-- `shadowtls_port` / `shadowtls_password` / `shadowtls_handshake_server` — shadowtls v3 (TCP fallback). `shadowtls_handshake_server` is the masquerade TLS1.3 site, shared by edge `handshake.server` and router `tls.server_name`
+- `shadowtls_port` / `shadowtls_password` / `shadowtls_handshake_server` — shadowtls v3 (TCP fallback). Already wired on edge (`shadowtls-in`); the router outbound lands in the 2nd pass. `shadowtls_handshake_server` is the masquerade TLS1.3 site, shared by edge `handshake.server` and (future) router `tls.server_name`
 - `shadowtls_ss_method` / `shadowtls_ss_secret` — internal SS2022 under shadowtls (NEW key — not `router_ss_secret`, not the :4433 chain secret)
 - `vpn_users` — list of `{name, password}` for both VPN and proxy
 - `ocserv_domain` / `ocserv_acme_email` — gateway domain (must resolve to gateway IP before first run)
 - `tgproxy_domain` — subdomain for Telegram API reverse proxy (default: `tapi.home12.ru`; must resolve to edge IP before first run)
 - `gost_version` — gost v2 binary version (default in role: `2.11.5`)
-- `ru_dns_dot_ip` / `ru_dns_dot_sni` — router RU DNS-over-TLS upstream (defaults in `flint_singbox/defaults`: `77.88.8.8` / `common.dot.dns.yandex.net`)
+- `ru_dns_dot_ip` / `ru_dns_dot_sni` — router RU DNS-over-TLS upstream (defaults in `owrt_singbox/defaults`: `77.88.8.8` / `common.dot.dns.yandex.net`)
+- `owrt_disable_hw_offload` — disable MediaTek HW flow offload on the router so NFQUEUE/nfqws can see packets (default `true` in `group_vars`)
 - `dpi_bypass_domains` — opt-in list of RKN-blocked domains routed direct WAN + nfqws DPI-desync instead of the tunnel (default `[]` → all blocked sites tunnel to gateway). Do not put Meta domains here with `dns-local` resolution (see caveat above). `nfqws_youtube_domains` must be a subset; `nfqws_routing_mark`/`nfqws_queue_num`/`nfqws_fwmark`/`nfqws_args` tune the desync
 - `router_singbox_watchdog` — enable the cron watchdog that restarts router `sing-box` on crash (default in role: `true`)
 
@@ -103,10 +111,17 @@ curl https://tapi.home12.ru/bot<TOKEN>/getMe
 Router:
 ```bash
 service sing-box status && ip a show singtun0
+sing-box check -c /etc/sing-box/config.json   # render is from owrt_singbox (hysteria2 proxy outbound)
 nslookup instagram.com 127.0.0.1          # default (dpi_bypass_domains=[]): REAL Meta IP, resolved via dns-remote (DoH over tunnel) at gateway
                                           # if on nfqws-direct via dns-local: would be NXDOMAIN (Yandex censors Meta) — see caveat
 crontab -l | grep singbox-watchdog         # watchdog installed
 uci show firewall | grep mtu_fix           # MSS clamp on proxy zone
+```
+
+Edge — confirm the home→edge leg inbounds are listening:
+```bash
+ss -lnup | grep <hy2_port>                 # hysteria2 (UDP) — primary
+ss -lntp | grep <shadowtls_port>           # shadowtls (TCP) — fallback (edge always on; router outbound is a 2nd pass)
 ```
 
 ## Known gaps (from docs/architecture.md)

@@ -18,8 +18,8 @@ router_singbox_watchdog: true
 # утечка в RU + watchdog крутит crash-loop (ломает весь принцип fail-open).
 # Файлы качаются на control node при деплое и заливаются на роутер; обновляются
 # при каждом прогоне (geosite/geoip-ru меняются медленно — это приемлемо).
-flint_ruleset_dir: /etc/sing-box/rule-sets
-flint_rule_sets:
+owrt_ruleset_dir: /etc/sing-box/rule-sets
+owrt_rule_sets:
   - tag: geosite-ru
     url: "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-ru.srs"
   - tag: geoip-ru

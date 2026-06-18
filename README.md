@@ -27,7 +27,7 @@ flowchart LR
     U3[Telegram clients]
     U4[Home LAN\nall devices]
 
-    FL[GL-MT6000 Flint 2\nOpenWrt + sing-box TUN\nsingtun0]
+    FL[GL-MT6000 Flint 2\nOpenWrt + sing-box TUN\nowrt_singbox / singtun0]
     RU[Edge VPS\nnginx + mtg + sing-box\nHTTP :2080 / SOCKS :2081]
     DE[Gateway VPS\nocserv + unbound + sing-box\nVPN :443 / ss-in :4433]
     NET[Internet]
@@ -36,8 +36,8 @@ flowchart LR
     U4 -->|all traffic via TUN| FL
     FL -->|RU IP/domains| NET
     FL -.->|dpi_bypass_domains: direct + nfqws (опц., по умолч. пусто)| NET
-    FL ==>|non-RU primary: hysteria2 obfs UDP :39443| RU
-    FL -.->|non-RU fallback: shadowtls v3 TCP :8843| RU
+    FL ==>|non-RU: hysteria2 obfs UDP :39443 (active)| RU
+    FL -.->|fallback: shadowtls v3 TCP :8843 — edge готов, роутер 2-й проход| RU
     FL -.->|legacy SS2022 :8388 — режется ТСПУ| RU
     U2 -->|HTTP proxy auth| RU
     U3 -->|MTProto FakeTLS :443| RU
@@ -125,8 +125,8 @@ ansible-playbook -i inventory.ini router.yml
 | `de_wdtt` | gateway | WireGuard через VK TURN; собирает `wdtt-server` из исходников Go, DTLS `:56000`, WG `:56001`, NAT `10.66.66.0/24` |
 | `users` | gateway | синхронизация `/etc/ocserv/ocpasswd` из `vpn_users` |
 | `firewall` | VPS (оба) | nftables input/forward rules |
-| `flint_singbox` | GL-MT6000 | sing-box TUN (`singtun0`), split-DNS (RU/блок-домены → Яндекс **DoT**, иностранные → DoH через туннель, FakeIP), split-routing по `geoip-ru`/`geosite-ru`, outbound `proxy` на edge — транспорт выбирается `router_primary_transport` (hysteria2 \| shadowtls), cron-watchdog + `mtu_fix` |
-| `flint_nfqws` | GL-MT6000 | Опциональная DPI-десинхронизация (zapret/nfqws); NFQUEUE перехватывает TCP 80/443 и блокирует QUIC для трафика с `routing_mark={{ nfqws_routing_mark }}`. Простаивает, если `dpi_bypass_domains` пуст |
+| `owrt_singbox` | GL-MT6000 | sing-box TUN (`singtun0`), split-DNS (RU/блок-домены → Яндекс **DoT**, иностранные → DoH через туннель), split-routing по `geoip-ru`/`geosite-ru`, outbound `proxy` на edge — **hysteria2** (1-й проход; shadowtls-fallback на роутере 2-м проходом), cron-watchdog + `mtu_fix`. Переписан с нуля вместо снятого `flint_singbox` |
+| `owrt_nfqws` | GL-MT6000 | Опциональная DPI-десинхронизация (zapret/nfqws); NFQUEUE перехватывает TCP 80/443 и блокирует QUIC для трафика с `routing_mark={{ nfqws_routing_mark }}`. Простаивает, если `dpi_bypass_domains` пуст. Переписан с нуля вместо снятого `flint_nfqws` |
 
 ## Важные runtime-особенности
 
