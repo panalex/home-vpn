@@ -122,7 +122,7 @@ ansible-playbook -i inventory.ini router.yml
 | `ru_fronting` | edge | nginx-фронт, статическая заглушка, TLS-файлы |
 | `ru_letsencrypt` | edge | выпуск LE-сертификата для edge-домена |
 | `ru_singbox` | edge | локальный SOCKS/HTTP, публичный auth proxy, outbound на gateway; inbound'ы leg home→edge: hysteria2 (obfs salamander, UDP) + shadowtls v3 (TCP) + legacy SS2022 router-in, все → de-ss chain |
-| `ru_mtg` | edge | MTProto FakeTLS proxy для Telegram |
+| `ru_mtg` | edge | MTProto FakeTLS proxy для Telegram; маскировка под «золотой» домен `uniqr.pay.yandex.net` (развязан от LE-домена edge), domain-fronting фронтит active-probe на тот же домен → валидный yandex-серт (инвариант SNI↔fronting-cert) |
 | `ru_tgproxy` | edge | HTTPS reverse proxy `tapi.home12.ru` → `api.telegram.org` через gost + sing-box SOCKS |
 | `de_singbox` | gateway | ss-in на `:4433`, принимающий цепочку с edge |
 | `de_unbound` | gateway | локальный DNS для VPN-клиентов, DoT upstream |

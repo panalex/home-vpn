@@ -102,11 +102,29 @@ sequenceDiagram
     participant G as sing-box on gateway
     participant TG as Telegram DC
 
-    T->>M: MTProto FakeTLS :443
+    T->>M: MTProto FakeTLS :443 (SNI = uniqr.pay.yandex.net)
     M->>E: local SOCKS5 127.0.0.1:1081
     E->>G: encrypted sing-box chain
     G->>TG: outbound direct
 ```
+
+**FakeTLS-маскировка под «золотой» домен.** Раньше FakeTLS-домен брался из
+`{{ domain }}` — LE-домена самого edge (`*.home12.ru`): низкорепутационный, ТСПУ
+его фингерпринтит. Теперь домен задаётся отдельной `mtg_faketls_domain`
+(дефолт `uniqr.pay.yandex.net`), развязанной от LE-домена. Этот домен зашивается
+в секрет (`mtg generate-secret {{ mtg_faketls_domain }}`), им же клиент
+рекламирует SNI.
+
+**Инвариант SNI ↔ fronting-cert.** Рекламируемый клиентом SNI и серт, отдаваемый
+на active-probe к `edge:443`, должны ОБА соответствовать `uniqr.pay.yandex.net`.
+В mtg v2 `[domain-fronting]` по умолчанию реверс-проксирует пробу на хост **из
+секрета**, резолвя его через DNS и отдавая зонду НАСТОЯЩИЙ серт этого хоста.
+Поэтому в `mtg.toml` убран прежний `ip = 127.0.0.1` (фронтил локальную заглушку
+`ru_fronting` с home12.ru-сертом и ломал инвариант) — остался только
+`port = {{ mtg_domain_fronting_port }}` (443). Менять домен в секрете без правки
+fronting-таргета нельзя: иначе зонд получит несоответствующий серт. Перевыпуск
+секрета под новый домен на уже развёрнутом хосте — флагом `mtg_secret_regenerate`
+(см. ниже).
 
 ## Порты
 
@@ -116,7 +134,7 @@ sequenceDiagram
 |---:|---|---|---|---|
 | 22 | TCP | public | sshd | управление |
 | 80 | TCP | public | nginx/certbot | ACME HTTP-01 |
-| 443 | TCP | public | mtg/nginx | Telegram MTProto FakeTLS / fronting |
+| 443 | TCP | public | mtg/nginx | Telegram MTProto FakeTLS (маскировка под `uniqr.pay.yandex.net`) / fronting |
 | 8388 | TCP/UDP | public | sing-box `router-in` | legacy SS2022 leg home→edge (режется ТСПУ) |
 | 39443 | UDP | public | sing-box `hy2-in` | leg home→edge **primary**: hysteria2 + obfs salamander (LE-серт edge) |
 | 8843 | TCP | public | sing-box `shadowtls-in` | leg home→edge **fallback**: shadowtls v3 → внутр. SS2022 |

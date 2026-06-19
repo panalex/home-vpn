@@ -6,9 +6,14 @@ public-ipv4 = "{{ mtg_public_ipv4 }}"
 auto-update = false
 allow-fallback-on-unknown-dc = false
 
+# Active-probe маскировка. В mtg v2 domain-fronting по дефолту реверс-проксирует
+# пробу на хост ИЗ СЕКРЕТА ({{ mtg_faketls_domain }}), резолвя его через DNS, и
+# отдаёт зонду НАСТОЯЩИЙ серт этого хоста (SNI секрета == SNI хендшейка к нему).
+# Поэтому НЕ задаём `ip` (прежний 127.0.0.1:8443 фронтил локальную заглушку с
+# home12.ru-сертом → инвариант ломался). Оставляем только порт (валидный yandex
+# слушает 443) из переменной — устраняет хардкод и расхождение mtg_domain_fronting_port.
 [domain-fronting]
-ip = "127.0.0.1"
-port = 8443
+port = {{ mtg_domain_fronting_port }}
 
 [network]
 dns = "{{ mtg_dns }}"
