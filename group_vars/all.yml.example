@@ -106,7 +106,18 @@ mtg_bind_host: "0.0.0.0"
 mtg_concurrency: 4096
 mtg_prefer_ip: "only-ipv4"
 mtg_proxy_via_socks_uri: "socks5://127.0.0.1:1081"
-mtg_dns: "https://1.1.1.1/dns-query"
+# Резолвер mtg. Используется ТОЛЬКО для domain-fronting: mtg фронтит active-probe
+# на хост из секрета ({{ mtg_faketls_domain }}) через ПРЯМОЙ (native) диалер, минуя
+# SOCKS-прокси (mtglib/proxy.go: NativeDialer), поэтому и резолв, и сам коннект идут
+# напрямую с RU edge. Cloudflare DoH 1.1.1.1 из РФ режется ТСПУ ("no route to host"
+# на 1.1.1.1:443) → fronting падал с "cannot dial to the fronting domain". Берём
+# RU-достижимый резолвер Yandex (тот же 77.88.8.8, что ru_dns_dot_ip): он резолвит
+# uniqr.pay.yandex.net, а прямой коннект RU edge → Yandex:443 проходит (RU→RU), так
+# что зонд получает ВАЛИДНЫЙ yandex-серт (инвариант SNI↔fronting-cert выполнен).
+# Обычные клиенты этот резолвер НЕ используют — их egress идёт через SOCKS-цепочку
+# (mtg_proxy_via_socks_uri), резолв — на гейтвее. udp:// достаточно: домен Yandex
+# их собственный резолвер не цензурит, спуфинг на пути к active-probe бессмысленен.
+mtg_dns: "udp://77.88.8.8"
 mtg_domain_fronting_port: 443
 mtg_public_ipv4: "{{ ansible_host }}"
 mtg_secret_override: ""
