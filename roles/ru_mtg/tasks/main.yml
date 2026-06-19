@@ -33,13 +33,21 @@
 #   args:
 #     creates: /usr/local/bin/mtg
 
+- name: Force-remove existing mtg secret for regeneration
+  ansible.builtin.file:
+    path: /etc/mtg/secret
+    state: absent
+  when:
+    - mtg_secret_regenerate | default(false) | bool
+    - (mtg_secret_override | default('') | length) == 0
+
 - name: Check whether mtg secret file exists
   ansible.builtin.stat:
     path: /etc/mtg/secret
   register: mtg_secret_file_stat
 
 - name: Generate mtg FakeTLS secret
-  ansible.builtin.command: "/usr/local/bin/mtg generate-secret {{ domain }}"
+  ansible.builtin.command: "/usr/local/bin/mtg generate-secret {{ mtg_faketls_domain }}"
   register: mtg_generated_secret
   changed_when: true
   when:
@@ -102,3 +110,10 @@
     port: "{{ mtg_bind_port }}"
     timeout: 20
   failed_when: false
+
+- name: Show client tg://proxy link
+  ansible.builtin.debug:
+    msg: >-
+      tg://proxy?server={{ mtg_public_ipv4 }}&port={{ mtg_bind_port }}&secret={{ mtg_secret_effective }}
+  # Секрет здесь — публичная часть клиентской ссылки (его и так раздают), поэтому
+  # no_log не ставим: ссылку нужно увидеть в выводе, чтобы вставить в Telegram.

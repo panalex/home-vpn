@@ -111,6 +111,25 @@ mtg_domain_fronting_port: 443
 mtg_public_ipv4: "{{ ansible_host }}"
 mtg_secret_override: ""
 
+# «Золотой» домен FakeTLS-маскировки, РАЗВЯЗАННЫЙ от LE-домена edge ({{ domain }}).
+# Низкорепутационный *.home12.ru ТСПУ фингерпринтит; высокорепутационный
+# yandex-домен — нет. Этот домен зашивается в секрет (mtg generate-secret) → им же
+# клиент рекламирует SNI. ИНВАРИАНТ: рекламируемый SNI и серт, отдаваемый на
+# active-probe к edge:443, должны ОБА соответствовать этому домену — поэтому
+# domain-fronting тоже фронтит сюда (см. roles/ru_mtg/templates/mtg.toml.j2: mtg v2
+# по дефолту реверс-проксирует пробы на домен ИЗ СЕКРЕТА → серт берётся валидный
+# yandex-овский). Менять домен здесь без редеплоя ru_mtg ЗАПРЕЩЕНО.
+# ВАЖНО: продублируй это значение в реальный (gitignored) group_vars/all.yml.
+mtg_faketls_domain: "uniqr.pay.yandex.net"
+
+# Секрет генерится один раз (when: not secret-exists) и НЕ перевыпускается при
+# смене mtg_faketls_domain на уже развёрнутом хосте. Выставь true, чтобы при
+# следующем прогоне роли принудительно удалить /etc/mtg/secret ДО stat-проверки и
+# пересоздать секрет под новый домен. После перевыпуска верни обратно false
+# (при false роль идемпотентна). Все клиентские ссылки tg://proxy при этом
+# СМЕНЯТСЯ — раздать новую (роль печатает её в конце деплоя).
+mtg_secret_regenerate: false
+
 # =============================================================================
 # Public browser proxy on RU (SOCKS5/HTTP with auth)
 # Expose externally for FoxyProxy etc.
