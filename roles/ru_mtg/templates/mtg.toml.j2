@@ -6,17 +6,20 @@ public-ipv4 = "{{ mtg_public_ipv4 }}"
 auto-update = false
 allow-fallback-on-unknown-dc = false
 
-# Active-probe маскировка. В mtg v2 domain-fronting реверс-проксирует пробу на хост
-# ИЗ СЕКРЕТА ({{ mtg_faketls_domain }}): резолвит его через [network].dns и дальше
-# ПРЯМЫМ (native) диалером (минуя SOCKS, см. mtglib/proxy.go) коннектится к нему,
-# отдавая зонду НАСТОЯЩИЙ серт хоста (SNI секрета == SNI хендшейка к нему).
-# НЕ задаём `ip` (прежний 127.0.0.1:8443 фронтил локальную заглушку с home12.ru-
-# сертом → инвариант ломался). Оставляем только порт из переменной (устраняет
-# хардкод и расхождение mtg_domain_fronting_port).
-# ВАЖНО: и резолв, и коннект идут НАПРЯМУЮ с RU edge, поэтому [network].dns обязан
-# быть RU-достижим (mtg_dns = udp://77.88.8.8). Cloudflare DoH 1.1.1.1 из РФ режется
-# ТСПУ → fronting падал с "cannot dial to the fronting domain".
+# Active-probe fronting. Маскировка под золотой домен — ПАССИВНАЯ: клиент рекламирует
+# SNI = домен из секрета ({{ mtg_faketls_domain }}), это и видит ТСПУ на реальном
+# трафике. На active-probe к edge:443 mtg реверс-проксирует пробу на этот таргет.
+# Таргет — ЛОКАЛЬНАЯ заглушка ru_fronting (127.0.0.1:{{ mtg_domain_fronting_port }}):
+# firewall намеренно запирает uid mtg на localhost (nftables chain output: reject
+# admin-prohibited на любой внешний коннект mtg), поэтому сходить за живым yandex-
+# сертом mtg НЕ может — фронтить на реальный uniqr.pay.yandex.net = "no route to
+# host"/"operation not permitted". Заглушка отдаёт валидный LE-серт edge (home12.ru):
+# active-probe видит правдоподобный небольшой сайт, но не yandex-серт (принятый
+# trade-off — см. docs/architecture.md). ip оставлен localhost явно; порт берётся из
+# mtg_domain_fronting_port (= порт заглушки 8443) — переменная теперь реально
+# используется, хардкод/расхождение устранены.
 [domain-fronting]
+ip = "127.0.0.1"
 port = {{ mtg_domain_fronting_port }}
 
 [network]
