@@ -6,12 +6,16 @@ public-ipv4 = "{{ mtg_public_ipv4 }}"
 auto-update = false
 allow-fallback-on-unknown-dc = false
 
-# Active-probe маскировка. В mtg v2 domain-fronting по дефолту реверс-проксирует
-# пробу на хост ИЗ СЕКРЕТА ({{ mtg_faketls_domain }}), резолвя его через DNS, и
-# отдаёт зонду НАСТОЯЩИЙ серт этого хоста (SNI секрета == SNI хендшейка к нему).
-# Поэтому НЕ задаём `ip` (прежний 127.0.0.1:8443 фронтил локальную заглушку с
-# home12.ru-сертом → инвариант ломался). Оставляем только порт (валидный yandex
-# слушает 443) из переменной — устраняет хардкод и расхождение mtg_domain_fronting_port.
+# Active-probe маскировка. В mtg v2 domain-fronting реверс-проксирует пробу на хост
+# ИЗ СЕКРЕТА ({{ mtg_faketls_domain }}): резолвит его через [network].dns и дальше
+# ПРЯМЫМ (native) диалером (минуя SOCKS, см. mtglib/proxy.go) коннектится к нему,
+# отдавая зонду НАСТОЯЩИЙ серт хоста (SNI секрета == SNI хендшейка к нему).
+# НЕ задаём `ip` (прежний 127.0.0.1:8443 фронтил локальную заглушку с home12.ru-
+# сертом → инвариант ломался). Оставляем только порт из переменной (устраняет
+# хардкод и расхождение mtg_domain_fronting_port).
+# ВАЖНО: и резолв, и коннект идут НАПРЯМУЮ с RU edge, поэтому [network].dns обязан
+# быть RU-достижим (mtg_dns = udp://77.88.8.8). Cloudflare DoH 1.1.1.1 из РФ режется
+# ТСПУ → fronting падал с "cannot dial to the fronting domain".
 [domain-fronting]
 port = {{ mtg_domain_fronting_port }}
 
