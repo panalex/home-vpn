@@ -30,6 +30,49 @@
         "enabled": true,
         "padding": true
       }{% endif %}
+    },
+    {
+      "type": "hysteria2",
+      "tag": "hy2-in",
+      "listen": "0.0.0.0",
+      "listen_port": {{ de_hy2_port }},
+      "obfs": {
+        "type": "salamander",
+        "password": "{{ de_hy2_obfs_password }}"
+      },
+      "users": [
+        { "name": "edge", "password": "{{ de_hy2_password }}" }
+      ],
+      "tls": {
+        "enabled": true,
+        "alpn": ["h3"],
+        "certificate_path": "/etc/letsencrypt/live/{{ ocserv_domain }}/fullchain.pem",
+        "key_path": "/etc/letsencrypt/live/{{ ocserv_domain }}/privkey.pem"
+      }
+    },
+    {
+      "type": "shadowtls",
+      "tag": "shadowtls-in",
+      "listen": "0.0.0.0",
+      "listen_port": {{ de_shadowtls_port }},
+      "version": 3,
+      "users": [
+        { "name": "edge", "password": "{{ de_shadowtls_password }}" }
+      ],
+      "handshake": {
+        "server": "{{ de_shadowtls_handshake_server }}",
+        "server_port": 443
+      },
+      "strict_mode": true,
+      "detour": "shadowtls-ss-in"
+    },
+    {
+      "type": "shadowsocks",
+      "tag": "shadowtls-ss-in",
+      "listen": "127.0.0.1",
+      "network": "tcp",
+      "method": "{{ de_shadowtls_ss_method }}",
+      "password": "{{ de_shadowtls_ss_secret }}"
     }
   ],
   "outbounds": [

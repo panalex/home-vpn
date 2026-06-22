@@ -90,6 +90,59 @@ shadowtls_ss_secret: "REPLACE_ME_BASE64_32_BYTES"  # openssl rand -base64 32
 router_primary_transport: hysteria2
 
 # =============================================================================
+# Транспорт leg edge→DE (edge VPS → DE gateway) — УСТРАНЕНИЕ АСИММЕТРИИ
+# =============================================================================
+# Нога роутер→edge уже укреплена (hy2-in/shadowtls-in выше), но ЕДИНСТВЕННОЕ
+# звено, реально пересекающее границу для Telegram-пути
+#   phone → FakeTLS :443 mtg → local socks :1081 → ru_singbox → "de-out" → DE,
+# оставалось ГОЛЫМ Shadowsocks-2022 на :{{ '{{' }} singbox_server_port {{ '}}' }} (4433).
+# По тем же причинам, что и для роутер→edge (ТСПУ ушёл от сигнатур протокола к
+# поведенческому + JA3/JA4 анализу), голый SS2022 на иностранный IP заносится в
+# «чёрную дыру»: handshake проходит, payload дропается. Это и была причина
+# периодических отказов Telegram. Здесь — симметричное укрепление edge→DE:
+# DE поднимает hy2-in (primary) + shadowtls-in (fallback) ПАРАЛЛЕЛЬНО старому
+# ss-in :4433; edge гоняет их через urltest-группу "de-out" = [de-hy2,
+# de-shadowtls-ss, de-ss], где голый de-ss остаётся ПОСЛЕДНИМ резервом.
+# direct к Telegram НЕ добавляем — ТСПУ режет прямой коннект на api.telegram.org.
+#
+# Brutal так же ВЫКЛЮЧЕН (нет up_mbps/down_mbps) — ровный трафик-паттерн палит.
+#
+# ВАЖНО: продублируй эти значения в реальный (gitignored) group_vars/all.yml.
+# Все *_password / *_secret ниже — НОВЫЕ ключи (openssl rand -base64 32), НЕ
+# переиспользуй ключи других ног (singbox_server_password, hy2_password,
+# shadowtls_*_secret, router_ss_secret и т.п.).
+#
+# ПРЕДУСЛОВИЕ (cert): hy2-in на DE использует реальный LE-серт ocserv_domain
+# (/etc/letsencrypt/live/{{ '{{' }} ocserv_domain {{ '}}' }}/{fullchain,privkey}.pem),
+# который выпускает роль de_ocserv (certbot --standalone). В site.yml порядок
+# ролей DE поправлен так, что de_ocserv идёт ДО de_singbox — серт существует к
+# моменту старта sing-box. Если деплоишь de_singbox отдельным тегом на чистый
+# хост — сперва прогони de_ocserv (или ru-аналог LE), иначе sing-box не стартует.
+
+# --- hysteria2 (primary). UDP-порт на DE без коллизий с занятыми
+#     22/80/443/853/1080/1081/2080/2081/4433/8388/8443/8843/9443/39443/56000/56001
+#     и НЕ 443 (там ocserv udp). 39444 свободен; занят — подбери другой высокий UDP. ---
+de_hy2_port: 39444
+de_hy2_password: "REPLACE_ME_BASE64_32_BYTES"       # openssl rand -base64 32, НОВЫЙ
+de_hy2_obfs_password: "REPLACE_ME_BASE64_32_BYTES"  # openssl rand -base64 32, НОВЫЙ
+
+# --- shadowtls v3 (fallback). TCP-порт на DE без коллизий (см. список выше).
+#     8943 свободен; занят — подбери другой свободный TCP. ---
+de_shadowtls_port: 8943
+de_shadowtls_password: "REPLACE_ME_BASE64_32_BYTES" # openssl rand -base64 32, НОВЫЙ
+# Реальный TLS1.3-домен для маскировки shadowtls-хендшейка (общий для DE-inbound
+# handshake.server и edge-outbound tls.server_name). Популярный TLS1.3-сайт.
+de_shadowtls_handshake_server: "www.microsoft.com"
+# Внутренний SS2022 под shadowtls (detour-цель на DE / detour-источник на edge).
+# НОВЫЙ ключ — НЕ переиспользуй shadowtls_ss_secret (router-нога) и не secret :4433.
+de_shadowtls_ss_method: "2022-blake3-aes-256-gcm"
+de_shadowtls_ss_secret: "REPLACE_ME_BASE64_32_BYTES"  # openssl rand -base64 32, НОВЫЙ
+
+# Держать старый голый de-ss (:4433) последним кандидатом в urltest "de-out".
+# Оставляем true как страховку, пока hy2/shadowtls не подтверждены боевыми.
+de_ss_legacy_enable: true
+
+# =============================================================================
 # RU -> sing-box client (relays everything to DE)
 # =============================================================================
 ru_singbox_socks_bind: "127.0.0.1"

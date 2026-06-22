@@ -51,7 +51,7 @@ sequenceDiagram
     participant I as Internet
 
     B->>E: HTTP proxy :2080 or SOCKS :2081 with auth
-    E->>G: Shadowsocks 2022 chain :4433
+    E->>G: edge→DE urltest de-out: hysteria2 :39444 (primary) → shadowtls :8943 (fallback) → SS2022 :4433 (last resort)
     G->>I: outbound direct
 ```
 
@@ -162,7 +162,9 @@ stream-passthrough на :8443 → реальный Yandex, mtg по-прежне
 | 22 | TCP | public | sshd | управление |
 | 80 | TCP | public | certbot standalone | ACME HTTP-01 для ocserv |
 | 443 | TCP/UDP | public | ocserv | OpenConnect/AnyConnect VPN |
-| 4433 | TCP | public, restricted by firewall | sing-box | ingress с edge-узла |
+| 39444 | UDP | public, restricted by firewall (edge IP only) | sing-box `hy2-in` | нога edge→DE **primary**: hysteria2 + obfs salamander (TLS = LE-серт ocserv_domain) |
+| 8943 | TCP | public, restricted by firewall (edge IP only) | sing-box `shadowtls-in` | нога edge→DE **fallback**: shadowtls v3 → внутр. SS2022 |
+| 4433 | TCP | public, restricted by firewall | sing-box `ss-in` | нога edge→DE **last resort**: legacy SS2022 ingress с edge-узла |
 | 53 | TCP/UDP | VPN interface | unbound | DNS для VPN-клиентов |
 | 56000 | UDP | public | wdtt-server | WireGuard over DTLS/VK TURN |
 | 56001 | UDP | loopback | wdtt-server | внутренний WireGuard listener |
@@ -248,7 +250,7 @@ Firewall реализован через nftables.
 
 ### Транспорт leg home→edge
 
-Категория `proxy` (туннель) физически идёт роутер → **edge** одним из транспортов, и уже на edge все они маршрутизируются в существующий outbound `de-ss` (цепочка edge → gateway, SS2022 :4433). **Edge всегда слушает оба** новых inbound (`hy2-in` + `shadowtls-in`). Роли роутера — **`owrt_singbox`** (sing-box TUN) + **`owrt_nfqws`** (DPI-десинк); прежние `flint_*` сняты как нестабильные и переписаны с нуля как `owrt_*`.
+Категория `proxy` (туннель) физически идёт роутер → **edge** одним из транспортов, и уже на edge все они маршрутизируются в outbound `de-out` (нога edge → gateway, см. ниже). **Edge всегда слушает оба** новых inbound (`hy2-in` + `shadowtls-in`). Роли роутера — **`owrt_singbox`** (sing-box TUN) + **`owrt_nfqws`** (DPI-десинк); прежние `flint_*` сняты как нестабильные и переписаны с нуля как `owrt_*`.
 
 > **1-й проход — hysteria2-only на роутере.** `owrt_singbox` рендерит только hysteria2-outbound (тег `proxy`) и проверяет `assert router_primary_transport == hysteria2`. shadowtls-outbound на роутере — отдельным 2-м проходом, когда hy2 подтверждён рабочим с LAN. Поскольку edge уже слушает `shadowtls-in`, переключение тогда = добавить outbound + `ansible-playbook router.yml` (edge не трогаем).
 
@@ -258,7 +260,21 @@ Firewall реализован через nftables.
 | shadowtls v3 → внутренний SS2022 (detour) | `shadowtls_port` 8843/tcp | TLS1.3-хендшейк к `shadowtls_handshake_server` | ⏳ 2-й проход (edge `shadowtls-in` готов) | **fallback** — если провайдер режет UDP/QUIC |
 | «голый» SS2022 `router-in` | `router_ss_port` 8388/tcp | нет | ⚪ legacy, не используется | режется ТСПУ по поведению/JA3 (первый шифроблок дропается) |
 
-Brutal **выключен сознательно**: `up_mbps`/`down_mbps` не задаются ни на edge, ни на роутере — на стабильном канале фиксированная полоса даёт аномально ровный паттерн, отдельный признак для поведенческого детекта. На edge inbound'ы `router-in`, `hy2-in`, `shadowtls-ss-in` сведены в одно route-правило → `de-ss`. hysteria2 TLS использует тот же LE-серт edge, что nginx/mtg; certbot deploy-hook рестартит sing-box при обновлении серта. Требуется sing-box ≥ 1.12 на роутере (apk) — hysteria2 и shadowtls v3 поддержаны (проект на 1.13.x).
+Brutal **выключен сознательно**: `up_mbps`/`down_mbps` не задаются ни на edge, ни на роутере — на стабильном канале фиксированная полоса даёт аномально ровный паттерн, отдельный признак для поведенческого детекта. На edge inbound'ы `router-in`, `hy2-in`, `shadowtls-ss-in` сведены в одно route-правило → `de-out`. hysteria2 TLS использует тот же LE-серт edge, что nginx/mtg; certbot deploy-hook рестартит sing-box при обновлении серта. Требуется sing-box ≥ 1.12 на роутере (apk) — hysteria2 и shadowtls v3 поддержаны (проект на 1.13.x).
+
+### Транспорт leg edge→DE (устранение асимметрии)
+
+Долгое время нога роутер→edge была укреплена (hy2/shadowtls), а **единственное звено, реально пересекающее границу** — edge → DE — оставалось «голым» Shadowsocks-2022 на `:4433`. Для Telegram-пути это критично: `phone → FakeTLS :443 mtg → local socks :1081 → ru_singbox → de-out → DE → api.telegram.org`. Голый SS2022 на иностранный IP ТСПУ заносит в «чёрную дыру» по тому же поведенческому + JA3/JA4 анализу (handshake проходит, payload дропается) — это и была причина периодических отказов Telegram.
+
+Нога edge→DE укреплена **симметрично** роутер→edge: DE поднимает `hy2-in` (primary) + `shadowtls-in` (fallback) **параллельно** старому `ss-in :4433`, а edge гоняет их через urltest-группу `de-out`. **direct к Telegram не добавляем** — прямой коннект на `api.telegram.org` ТСПУ режет.
+
+| Транспорт edge→DE | Порт на DE | Маскировка | Роль в `de-out` |
+|---|---|---|---|
+| hysteria2 поверх QUIC/UDP (`de-hy2`) | `de_hy2_port` 39444/udp | obfs salamander + TLS на LE-серте `ocserv_domain` | **primary** — QUIC не разбирается TCP-ориентированным ТСПУ |
+| shadowtls v3 → внутр. SS2022 (`de-shadowtls-ss`→`de-shadowtls-tls`) | `de_shadowtls_port` 8943/tcp | TLS1.3-хендшейк к `de_shadowtls_handshake_server` | **fallback** — если режут UDP/QUIC |
+| «голый» SS2022 (`de-ss`) | `singbox_server_port` 4433/tcp | нет | **last resort** (`de_ss_legacy_enable`), включён как страховка |
+
+`de-out` = `urltest` по `https://www.gstatic.com/generate_204` (interval 30s, tolerance 50): sing-box сам выбирает живой транспорт с минимальной задержкой и переключается при отказе. Все ссылки на `de-ss` в `ru_singbox` (route `final`, правило inbound-группы, `detour` у remote-dns) переведены на `de-out`. Правила `direct` (DE/32 → direct, `ssh_port` → direct) **не тронуты** — они нужны, чтобы сами транспорты до DE шли напрямую, без петли. DE-firewall открывает 39444/udp и 8943/tcp **только с IP edge** (рядом с легаси-правилом для :4433). Cert: `hy2-in` на DE использует LE-серт `ocserv_domain` (выпускает `de_ocserv`); в `site.yml` `de_ocserv` теперь идёт **до** `de_singbox`, чтобы серт существовал к старту sing-box.
 
 ### Split-DNS на роутере
 

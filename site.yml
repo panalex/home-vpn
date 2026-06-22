@@ -1,6 +1,6 @@
 ---
 - name: Base preparation on all hosts
-  hosts: all
+  hosts: [ru_vps, de_vps]
   become: true
   roles:
     - role: common
@@ -12,10 +12,14 @@
   roles:
     - role: de_unbound
       tags: [de_unbound, de, dns]
-    - role: de_singbox
-      tags: [de_singbox, de, singbox]
+    # de_ocserv runs BEFORE de_singbox: it issues the Let's Encrypt cert for
+    # ocserv_domain (certbot --standalone), which de_singbox's hy2-in inbound
+    # now references for TLS. On a fresh host the cert must exist before
+    # sing-box starts, or the service fails to come up.
     - role: de_ocserv
       tags: [de_ocserv, de, ocserv, vpn]
+    - role: de_singbox
+      tags: [de_singbox, de, singbox]
     - role: de_wdtt
       tags: [de_wdtt, de, wdtt]
     - role: de_mgmt

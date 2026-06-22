@@ -13,7 +13,7 @@ Ansible-проект для двух VPS и домашнего роутера GL
 - nftables firewall/NAT для обоих VPS-узлов;
 - единый список пользователей для прокси и VPN;
 - WDTT-сервер на gateway: WireGuard через VK TURN / DTLS (:56000), позволяет пробить NAT без проброса портов;
-- sing-box TUN на роутере GL-MT6000 (OpenWrt, роли `owrt_singbox` + `owrt_nfqws`): трафик домашней сети прозрачно уходит в gateway через edge — первый хоп роутер→edge идёт по **hysteria2** (QUIC/UDP + obfs salamander; «голый» SS2022 leg резался ТСПУ), дальше цепочка edge→gateway; российские IP/домены идут напрямую;
+- sing-box TUN на роутере GL-MT6000 (OpenWrt, роли `owrt_singbox` + `owrt_nfqws`): трафик домашней сети прозрачно уходит в gateway через edge — первый хоп роутер→edge идёт по **hysteria2** (QUIC/UDP + obfs salamander; «голый» SS2022 leg резался ТСПУ), дальше нога edge→gateway — **симметрично укреплена** тем же набором: hysteria2 (primary) + shadowtls v3 (fallback) + legacy SS2022 (последний резерв), выбор через urltest-группу `de-out`; российские IP/домены идут напрямую;
 - `nfqws` (zapret) на роутере: опциональная DPI-десинхронизация для отдельных РКН-заблокированных сайтов с прямым выходом через WAN без туннеля (домены задаются в `dpi_bypass_domains`; по умолчанию список пуст — все заблокированные сайты идут через туннель).
 
 Репозиторий подготовлен для публичной публикации: реальные IP, домены, пароли, `.git`-история и локальные vars исключены. Перед использованием создайте собственные `inventory.ini` и `group_vars/all.yml` из `.example`-файлов.
@@ -29,7 +29,7 @@ flowchart LR
 
     FL[GL-MT6000 Flint 2\nOpenWrt + sing-box TUN\nowrt_singbox / singtun0]
     RU[Edge VPS\nnginx + mtg + sing-box\nHTTP :2080 / SOCKS :2081]
-    DE[Gateway VPS\nocserv + unbound + sing-box\nVPN :443 / ss-in :4433]
+    DE[Gateway VPS\nocserv + unbound + sing-box\nVPN :443 / hy2-in :39444 + shadowtls :8943 + ss-in :4433]
     NET[Internet]
     DNS[Cloudflare / Quad9 DoT]
 
@@ -41,7 +41,9 @@ flowchart LR
     FL -.->|legacy SS2022 :8388 — режется ТСПУ| RU
     U2 -->|HTTP proxy auth| RU
     U3 -->|MTProto FakeTLS :443| RU
-    RU -->|sing-box chain :4433| DE
+    RU ==>|edge→DE: hysteria2 obfs UDP :39444 — active| DE
+    RU -.->|fallback: shadowtls v3 TCP :8943| DE
+    RU -.->|last resort: legacy SS2022 :4433| DE
     U1 -->|OpenConnect :443 tcp/udp| DE
     U5[WireGuard clients] -->|DTLS :56000 via VK TURN| DE
     DE --> NET
@@ -88,6 +90,10 @@ openssl rand -base64 32   # hy2_password            — hysteria2 leg роуте
 openssl rand -base64 32   # hy2_obfs_password       — obfs salamander
 openssl rand -base64 32   # shadowtls_password      — shadowtls v3 (edge готов, роутер 2-й проход)
 openssl rand -base64 32   # shadowtls_ss_secret     — внутр. SS2022 под shadowtls
+openssl rand -base64 32   # de_hy2_password         — hysteria2 leg edge→DE (primary)
+openssl rand -base64 32   # de_hy2_obfs_password    — obfs salamander (edge→DE)
+openssl rand -base64 32   # de_shadowtls_password   — shadowtls v3 leg edge→DE (fallback)
+openssl rand -base64 32   # de_shadowtls_ss_secret  — внутр. SS2022 под shadowtls (edge→DE)
 ```
 
 Сгенерировать пароли пользователей:
@@ -121,10 +127,10 @@ ansible-playbook -i inventory.ini router.yml
 | `common` | VPS (оба) | базовые пакеты, sysctl, nftables, BBR |
 | `ru_fronting` | edge | nginx-фронт, статическая заглушка, TLS-файлы |
 | `ru_letsencrypt` | edge | выпуск LE-сертификата для edge-домена |
-| `ru_singbox` | edge | локальный SOCKS/HTTP, публичный auth proxy, outbound на gateway; inbound'ы leg home→edge: hysteria2 (obfs salamander, UDP) + shadowtls v3 (TCP) + legacy SS2022 router-in, все → de-ss chain |
+| `ru_singbox` | edge | локальный SOCKS/HTTP, публичный auth proxy, outbound на gateway через urltest `de-out` (hy2 → shadowtls → legacy ss); inbound'ы leg home→edge: hysteria2 (obfs salamander, UDP) + shadowtls v3 (TCP) + legacy SS2022 router-in, все → de-out |
 | `ru_mtg` | edge | MTProto FakeTLS proxy для Telegram; пассивная маскировка под «золотой» домен `uniqr.pay.yandex.net` в SNI секрета (развязан от LE-домена edge). Active-probe fronting — на локальную заглушку `ru_fronting` (mtg заперт firewall'ом на localhost), зонд видит валидный LE-серт edge |
 | `ru_tgproxy` | edge | HTTPS reverse proxy `tapi.home12.ru` → `api.telegram.org` через gost + sing-box SOCKS |
-| `de_singbox` | gateway | ss-in на `:4433`, принимающий цепочку с edge |
+| `de_singbox` | gateway | inbound'ы ноги edge→DE: hy2-in (UDP, primary) + shadowtls-in (TCP, fallback) + legacy ss-in `:4433`, все egress'ят direct |
 | `de_unbound` | gateway | локальный DNS для VPN-клиентов, DoT upstream |
 | `de_ocserv` | gateway | OpenConnect/AnyConnect VPN, LE-сертификат, VPN route hook |
 | `de_wdtt` | gateway | WireGuard через VK TURN; собирает `wdtt-server` из исходников Go, DTLS `:56000`, WG `:56001`, NAT `10.66.66.0/24` |
@@ -146,6 +152,8 @@ Gateway:
 ```bash
 systemctl status ocserv unbound sing-box --no-pager
 ss -lntup | egrep '(:443|:4433|:53)'
+ss -lnup  | grep 39444        # edge→DE hysteria2 inbound (UDP) — primary
+ss -lntp  | grep 8943         # edge→DE shadowtls inbound (TCP) — fallback
 nft list ruleset
 ```
 
