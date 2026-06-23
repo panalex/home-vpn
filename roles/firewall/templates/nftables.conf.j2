@@ -15,7 +15,6 @@ table inet filter {
 
     {% if 'ru_vps' in group_names %}
     tcp dport 80 accept
-    tcp dport {{ mtg_bind_port }} accept
     # home->edge transports: hysteria2 (UDP/QUIC) primary, shadowtls (TCP) fallback
     udp dport {{ hy2_port }} accept
     tcp dport {{ shadowtls_port }} accept
@@ -36,8 +35,7 @@ table inet filter {
     iifname "{{ ocserv_vpn_interface | default('vpns0') }}" tcp dport 53 accept
     # legacy chain inbound from RU only
     ip saddr {{ hostvars[groups['ru_vps'][0]].ansible_host | default(groups['ru_vps'][0]) }}/32 tcp dport {{ singbox_server_port }} accept
-    # edge->DE uplink hardening: hysteria2 (UDP) primary + shadowtls (TCP) fallback, RU edge IP only
-    ip saddr {{ hostvars[groups['ru_vps'][0]].ansible_host | default(groups['ru_vps'][0]) }}/32 udp dport {{ de_hy2_port }} accept
+    # edge->DE uplink: shadowtls (TCP), RU edge IP only
     ip saddr {{ hostvars[groups['ru_vps'][0]].ansible_host | default(groups['ru_vps'][0]) }}/32 tcp dport {{ de_shadowtls_port }} accept
     {% if wdtt_dtls_port is defined %}
     # wdtt: DTLS endpoint for VK TURN tunnel clients
@@ -66,16 +64,6 @@ table inet filter {
 
   chain output {
     type filter hook output priority 0; policy accept;
-
-    {% if 'ru_vps' in group_names %}
-    ct state established,related accept
-    meta skuid "mtg" oif "lo" tcp dport 1081 accept
-    meta skuid "mtg" oif "lo" udp dport 53 accept
-    meta skuid "mtg" oif "lo" tcp dport 53 accept
-    meta skuid "mtg" ip daddr 127.0.0.0/8 accept
-    meta skuid "mtg" ip6 daddr ::1 accept
-    meta skuid "mtg" ct state new reject with icmpx admin-prohibited
-    {% endif %}
   }
 }
 

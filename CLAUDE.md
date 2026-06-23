@@ -51,11 +51,11 @@ ansible-playbook -i inventory.ini site.yml --tags de_ocserv --check --diff
 
 Two VPS nodes + one GL-MT6000 router, deployed via two playbooks: `site.yml` (VPS) and `router.yml` (OpenWrt).
 
-**Edge VPS** (`ru_vps`): public ingress. Runs nginx (TLS fronting/ACME), `mtg` (Telegram MTProto FakeTLS on :443), `sing-box` (HTTP proxy :2080, SOCKS :2081 with auth, local loopback :1080/:1081 for mtg), `gost-tgproxy` (TCP bridge loopback :9443 → api.telegram.org:443 via sing-box SOCKS). All proxy traffic chains to gateway via Shadowsocks 2022 on :4433. `tapi.home12.ru` is a Telegram Bot API reverse proxy: Zabbix → nginx:8443 → gost:9443 → sing-box:1081 → gateway → api.telegram.org.
+**Edge VPS** (`ru_vps`): public ingress. Runs nginx (ACME for the edge LE cert) and `sing-box` (HTTP proxy :2080, SOCKS :2081 with auth, local loopback :1080/:1081). All proxy traffic chains to the gateway over the edge→DE uplink (shadowtls v3 by default, `de_uplink_transport`). :443 on edge is currently free (a former Telegram MTProto/`mtg` stack was removed; reserved for a future VLESS+Reality inbound).
 
-**Gateway VPS** (`de_vps`): egress + VPN concentrator. Runs `ocserv` (OpenConnect/AnyConnect VPN on :443 TCP/UDP), `unbound` (DNS for VPN clients via DoT), `sing-box` (ss-in :4433, restricted by firewall to edge IP only). VPN subnet: `10.99.0.0/24`, DNS: `10.99.0.1`.
+**Gateway VPS** (`de_vps`): egress + VPN concentrator. Runs `ocserv` (OpenConnect/AnyConnect VPN on :443 TCP/UDP), `unbound` (DNS for VPN clients via DoT), `sing-box` (edge→DE inbounds: `shadowtls-in` active + legacy `ss-in :4433`, both firewall-restricted to edge IP only). VPN subnet: `10.99.0.0/24`, DNS: `10.99.0.1`.
 
-**Router** (`routers`): GL-MT6000 with OpenWrt + `sing-box` TUN (`singtun0`), deployed by the **`owrt_singbox`** + **`owrt_nfqws`** roles (the previous `flint_*` roles were dropped — over-debugged and unreliable; rebuilt clean as `owrt_*`). Split routing (by sniffed SNI + geoip): RU IPs/domains go direct, everything else (incl. RKN-blocked sites by default) tunnels to gateway via the `proxy` outbound. **The home→edge leg uses hysteria2** — raw SS2022 `router-in` :8388 was getting cut by the ISP TSPU (TCP handshake passes, first ciphertext block dropped → blackhole), so edge now exposes two always-on inbounds: `hy2-in` (hysteria2 over QUIC/UDP + obfs salamander, **primary**) and `shadowtls-in` (shadowtls v3 → internal SS2022, TCP fallback). Both route into the existing `de-ss` chain on edge. **First pass is hysteria2-only on the router**: `owrt_singbox` renders just the hysteria2 outbound as tag `proxy` and asserts `router_primary_transport == hysteria2`; the shadowtls outbound on the router is a planned 2nd pass (edge already listens on `shadowtls-in`, so switching later = add the outbound + redeploy the router only, edge untouched). Brutal is intentionally OFF (no `up_mbps`/`down_mbps`) — fixed-rate CC produces an anomalous flat traffic pattern that aids behavioral detection. `dpi_bypass_domains` (default empty) is an opt-in third category: listed domains go direct WAN + nfqws DPI-desync instead of the tunnel. Split-DNS: `*.ru` + `geosite-ru` + `dpi_bypass_domains` resolve via Yandex **DoT** (`dns-local`, anti-spoofing, direct WAN); **everything else resolves via DoH over the tunnel** (`dns-remote` = 1.1.1.1, `detour: proxy`) — real IPs resolved at the gateway, no FakeIP. A cron watchdog (`/usr/bin/singbox-watchdog`) restarts `sing-box` if the process dies.
+**Router** (`routers`): GL-MT6000 with OpenWrt + `sing-box` TUN (`singtun0`), deployed by the **`owrt_singbox`** + **`owrt_nfqws`** roles (the previous `flint_*` roles were dropped — over-debugged and unreliable; rebuilt clean as `owrt_*`). Split routing (by sniffed SNI + geoip): RU IPs/domains go direct, everything else (incl. RKN-blocked sites by default) tunnels to gateway via the `proxy` outbound. **The home→edge leg uses hysteria2** — raw SS2022 `router-in` :8388 was getting cut by the ISP TSPU (TCP handshake passes, first ciphertext block dropped → blackhole), so edge now exposes two always-on inbounds: `hy2-in` (hysteria2 over QUIC/UDP + obfs salamander, **primary**) and `shadowtls-in` (shadowtls v3 → internal SS2022, TCP fallback). Both route into the edge→DE uplink on edge (active outbound selected by `de_uplink_transport`). **First pass is hysteria2-only on the router**: `owrt_singbox` renders just the hysteria2 outbound as tag `proxy` and asserts `router_primary_transport == hysteria2`; the shadowtls outbound on the router is a planned 2nd pass (edge already listens on `shadowtls-in`, so switching later = add the outbound + redeploy the router only, edge untouched). Brutal is intentionally OFF (no `up_mbps`/`down_mbps`) — fixed-rate CC produces an anomalous flat traffic pattern that aids behavioral detection. `dpi_bypass_domains` (default empty) is an opt-in third category: listed domains go direct WAN + nfqws DPI-desync instead of the tunnel. Split-DNS: `*.ru` + `geosite-ru` + `dpi_bypass_domains` resolve via Yandex **DoT** (`dns-local`, anti-spoofing, direct WAN); **everything else resolves via DoH over the tunnel** (`dns-remote` = 1.1.1.1, `detour: proxy`) — real IPs resolved at the gateway, no FakeIP. A cron watchdog (`/usr/bin/singbox-watchdog`) restarts `sing-box` if the process dies.
 
 ## Key design decisions
 
@@ -63,9 +63,7 @@ Two VPS nodes + one GL-MT6000 router, deployed via two playbooks: `site.yml` (VP
 
 **Unified users**: `vpn_users` in `group_vars/all.yml` is used for both `ocserv` (VPN passwords) and `sing-box` (proxy auth). The `proxy_users` alias points to the same list. The `users` role syncs `/etc/ocserv/ocpasswd` from this list.
 
-**sing-box chain**: Edge → Gateway uses Shadowsocks 2022 with multiplexing. The :4433 inbound on gateway is firewall-restricted to edge IP only, so it's not an open relay.
-
-**mtg routing**: mtg on edge forwards through the local sing-box SOCKS (:1081) which then chains to gateway — so Telegram traffic also exits through the gateway IP.
+**sing-box chain (edge→DE uplink)**: a single transport, selected by `de_uplink_transport` (`shadowtls` [default] | `ss`). shadowtls v3 masquerades a TLS1.3 handshake to `de_shadowtls_handshake_server`, then tunnels internal SS2022; `ss` is the legacy bare SS2022 on :4433 (manual fallback). The gateway listens on both inbounds always, firewall-restricted to edge IP only, so neither is an open relay. This was collapsed from a former 3-candidate `urltest` group (`de-out` = hysteria2 + shadowtls + ss): cross-border RU→DE QUIC was unreliable, and the urltest health-check resolved via `remote-dns` which detoured back into the group — a DNS loop that caused periodic drops. The active tag now drives `route.final`, the inbound-group rule, and the `remote-dns` detour together.
 
 **unbound DNSSEC fix**: Removes Ubuntu's conflicting `root-auto-trust-anchor-file.conf` and uses `trust-anchor-file: "/usr/share/dns/root.key"` explicitly.
 
@@ -79,8 +77,6 @@ Two VPS nodes + one GL-MT6000 router, deployed via two playbooks: `site.yml` (VP
 
 **Router rollback-guard (`/usr/bin/singbox-guard`)**: deploying a config that crash-loops sing-box is the one failure the watchdog can't fix (and it takes the management tunnel down with it). The guard is the single (re)start entry point — used by the `restart sing-box` handler **and** the watchdog: it `sing-box check`s the config, restarts, and if the process doesn't come up it restores `config.json.lkg` (last-known-good) and restarts; every successful start re-snapshots LKG. Deploys also stage to `config.json.new` and validate it **before** overwriting the live config, so a known-bad config never disrupts a working tunnel; the play fails fast instead. "Up" = process alive (fail-open semantics: sing-box alive ⇒ RU/zapret work, only geo-blocked category fails, no leak).
 
-**tgproxy gost bridge**: nginx cannot `proxy_pass` via SOCKS5 natively. `gost` (single static binary) listens on `127.0.0.1:9443` and dials `api.telegram.org:443` through sing-box SOCKS `127.0.0.1:1081`. nginx uses `proxy_ssl_server_name on` + `proxy_ssl_name api.telegram.org` so that TLS SNI is correct even though the TCP connection goes to localhost. mtg domain-fronting forwards all non-Telegram :443 traffic to `127.0.0.1:8443` as raw TCP; nginx does SNI-based virtual hosting there, so no firewall changes are needed.
-
 ## Variables
 
 All secrets and host-specific config live in `group_vars/all.yml` (gitignored). Key vars:
@@ -90,10 +86,10 @@ All secrets and host-specific config live in `group_vars/all.yml` (gitignored). 
 - `hy2_port` / `hy2_password` / `hy2_obfs_password` — hysteria2 inbound (edge) / outbound (router). UDP. TLS uses the edge LE cert (`/etc/letsencrypt/live/{{ domain }}/`); obfs salamander. No `up_mbps`/`down_mbps` (Brutal off, by design)
 - `shadowtls_port` / `shadowtls_password` / `shadowtls_handshake_server` — shadowtls v3 (TCP fallback). Already wired on edge (`shadowtls-in`); the router outbound lands in the 2nd pass. `shadowtls_handshake_server` is the masquerade TLS1.3 site, shared by edge `handshake.server` and (future) router `tls.server_name`
 - `shadowtls_ss_method` / `shadowtls_ss_secret` — internal SS2022 under shadowtls (NEW key — not `router_ss_secret`, not the :4433 chain secret)
+- `de_uplink_transport` — active edge→DE transport: `shadowtls` (default) | `ss`. DE listens on both inbounds always; switching = change this var + redeploy edge only
+- `de_shadowtls_port` / `de_shadowtls_password` / `de_shadowtls_handshake_server` / `de_shadowtls_ss_method` / `de_shadowtls_ss_secret` — shadowtls v3 edge→DE uplink (active). NEW keys — not the router-leg shadowtls keys, not the :4433 chain secret. No local TLS cert needed on DE (shadowtls masquerades to the handshake server)
 - `vpn_users` — list of `{name, password}` for both VPN and proxy
 - `ocserv_domain` / `ocserv_acme_email` — gateway domain (must resolve to gateway IP before first run)
-- `tgproxy_domain` — subdomain for Telegram API reverse proxy (default: `tapi.home12.ru`; must resolve to edge IP before first run)
-- `gost_version` — gost v2 binary version (default in role: `2.11.5`)
 - `ru_dns_dot_ip` / `ru_dns_dot_sni` — router RU DNS-over-TLS upstream (defaults in `owrt_singbox/defaults`: `77.88.8.8` / `common.dot.dns.yandex.net`)
 - `owrt_disable_hw_offload` — disable MediaTek HW flow offload on the router so NFQUEUE/nfqws can see packets (default `true` in `owrt_nfqws/defaults`; also shown in `group_vars/all.yml.example`)
 - `dpi_bypass_domains` — opt-in list of RKN-blocked domains routed direct WAN + nfqws DPI-desync instead of the tunnel (default `[]` → all blocked sites tunnel to gateway). Do not put Meta domains here with `dns-local` resolution (see caveat above). `nfqws_youtube_domains` must be a subset; `nfqws_routing_mark`/`nfqws_queue_num`/`nfqws_fwmark`/`nfqws_args` tune the desync
@@ -104,16 +100,15 @@ All secrets and host-specific config live in `group_vars/all.yml` (gitignored). 
 Gateway:
 ```bash
 systemctl status ocserv unbound sing-box --no-pager
-ss -lntup | egrep '(:443|:4433|:53)'
+ss -lntup | egrep '(:443|:8943|:4433|:53)'   # ocserv / shadowtls-in (active) / legacy ss-in
 nft list ruleset
 ```
 
 Edge:
 ```bash
-systemctl status nginx mtg sing-box gost-tgproxy --no-pager
-ss -lntup | egrep '(:443|:2080|:2081|:9443)'
+systemctl status nginx sing-box --no-pager
+ss -lntup | egrep '(:2080|:2081)'
 curl --proxy http://USER:PASSWORD@EDGE_IP:2080 https://ifconfig.me
-curl https://tapi.home12.ru/bot<TOKEN>/getMe
 ```
 
 Router:

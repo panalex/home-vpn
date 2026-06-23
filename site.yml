@@ -12,10 +12,11 @@
   roles:
     - role: de_unbound
       tags: [de_unbound, de, dns]
-    # de_ocserv runs BEFORE de_singbox: it issues the Let's Encrypt cert for
-    # ocserv_domain (certbot --standalone), which de_singbox's hy2-in inbound
-    # now references for TLS. On a fresh host the cert must exist before
-    # sing-box starts, or the service fails to come up.
+    # de_ocserv still owns the Let's Encrypt cert for ocserv_domain (certbot
+    # --standalone), used by ocserv itself. de_singbox no longer references it
+    # (the edge→DE uplink collapsed to shadowtls + legacy ss-in, neither needs a
+    # local cert), so the ordering is no longer a hard dependency — kept as-is
+    # since ocserv is the cert owner and nothing benefits from reordering.
     - role: de_ocserv
       tags: [de_ocserv, de, ocserv, vpn]
     - role: de_singbox
@@ -37,10 +38,6 @@
       tags: [ru_letsencrypt, ru, web, letsencrypt]
     - role: ru_singbox
       tags: [ru_singbox, ru, singbox]
-    - role: ru_mtg
-      tags: [ru_mtg, ru, telegram]
-    - role: ru_tgproxy
-      tags: [ru_tgproxy, ru, tgproxy]
     - role: firewall
       tags: [firewall, ru]
 

@@ -1,21 +1,9 @@
 ---
-# hy2-in uses the Let's Encrypt cert issued by de_ocserv (certbot). de_ocserv
-# runs before de_singbox in site.yml, but a targeted run (--tags de_singbox) on
-# a host that never issued the cert would otherwise fail opaquely at the
-# "sing-box check" validate step. Assert it up front with an actionable message.
-- name: Assert Let's Encrypt cert for hy2-in exists (issued by de_ocserv)
-  ansible.builtin.stat:
-    path: "/etc/letsencrypt/live/{{ ocserv_domain }}/fullchain.pem"
-  register: de_le_cert
-
-- name: Fail early if the hy2-in TLS cert is missing
-  ansible.builtin.assert:
-    that: de_le_cert.stat.exists
-    fail_msg: >-
-      Нет LE-серта /etc/letsencrypt/live/{{ ocserv_domain }}/ для hy2-in.
-      Его выпускает роль de_ocserv (certbot). Прогони сперва de_ocserv
-      (или полный site.yml) — в site.yml de_ocserv идёт до de_singbox.
-
+# DE sing-box inbounds (shadowtls-in TCP, legacy ss-in :4433) terminate the
+# edge→DE uplink and need no local TLS cert — shadowtls masquerades to an
+# external handshake server, ss-in is keyless SS2022. (The previous hy2-in
+# inbound, which referenced the de_ocserv LE cert, was removed when the uplink
+# collapsed to a single TCP transport.)
 - name: Resolve sing-box package architecture
   ansible.builtin.set_fact:
     singbox_pkg_arch: "{{ singbox_arch_map[ansible_architecture] | default('amd64') }}"
