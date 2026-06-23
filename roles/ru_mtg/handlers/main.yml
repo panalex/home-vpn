@@ -1,6 +1,0 @@
----
-- name: Restart mtg
-  ansible.builtin.systemd:
-    name: mtg
-    state: restarted
-    daemon_reload: true

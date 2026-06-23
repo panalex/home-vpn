@@ -8,7 +8,6 @@
 
 - полнотуннельный OpenConnect/AnyConnect VPN для ноутбуков и мобильных клиентов;
 - браузерный HTTP/SOCKS proxy для выборочной маршрутизации через FoxyProxy;
-- Telegram MTProto proxy на публичном edge-узле;
 - egress через отдельный gateway-узел;
 - воспроизводимый Ansible-deploy после reboot или переустановки сервера.
 
@@ -16,7 +15,7 @@
 
 | Логическое имя | Inventory group | Назначение | Основные сервисы |
 |---|---|---|---|
-| Edge VPS | `ru_vps` | публичная точка входа для Telegram и браузерного прокси | nginx, mtg, sing-box |
+| Edge VPS | `ru_vps` | публичная точка входа для браузерного прокси и home→edge туннеля | nginx, sing-box |
 | Gateway VPS | `de_vps` | VPN concentrator, WDTT relay и внешний egress | ocserv, unbound, sing-box, wdtt |
 | Роутер | `routers` | прозрачный proxy для домашней сети + DPI-обход | sing-box TUN, nfqws |
 
@@ -51,7 +50,7 @@ sequenceDiagram
     participant I as Internet
 
     B->>E: HTTP proxy :2080 or SOCKS :2081 with auth
-    E->>G: edge→DE urltest de-out: hysteria2 :39444 (primary) → shadowtls :8943 (fallback) → SS2022 :4433 (last resort)
+    E->>G: edge→DE single transport: shadowtls :8943 (active) / legacy SS2022 :4433 (manual fallback)
     G->>I: outbound direct
 ```
 
@@ -92,52 +91,6 @@ nfqws перехватывает пакеты с `routing_mark={{ nfqws_routing_
 
 > **Домены Meta нельзя класть в `dpi_bypass_domains` с резолвом через Яндекс.** См. предупреждение в split-DNS ниже.
 
-### 3. Telegram -> Edge mtg -> Gateway -> Telegram
-
-```mermaid
-sequenceDiagram
-    participant T as Telegram client
-    participant M as mtg on edge
-    participant E as sing-box SOCKS on edge
-    participant G as sing-box on gateway
-    participant TG as Telegram DC
-
-    T->>M: MTProto FakeTLS :443 (SNI = uniqr.pay.yandex.net)
-    M->>E: local SOCKS5 127.0.0.1:1081
-    E->>G: encrypted sing-box chain
-    G->>TG: outbound direct
-```
-
-**FakeTLS-маскировка под «золотой» домен.** Раньше FakeTLS-домен брался из
-`{{ domain }}` — LE-домена самого edge (`*.home12.ru`): низкорепутационный, ТСПУ
-его фингерпринтит. Теперь домен задаётся отдельной `mtg_faketls_domain`
-(дефолт `uniqr.pay.yandex.net`), развязанной от LE-домена. Этот домен зашивается
-в секрет (`mtg generate-secret {{ mtg_faketls_domain }}`), им же клиент
-рекламирует SNI.
-
-Главный выигрыш — **пассивный**: ТСПУ, наблюдая реальные клиентские подключения,
-видит рекламируемый SNI `uniqr.pay.yandex.net` (он же зашит в секрет), а не
-низкорепутационный `home12.ru`. Это закрывает доминирующий вектор фингерпринта.
-
-**Active-probe fronting остаётся на ЛОКАЛЬНОЙ заглушке.** Полный инвариант
-(`active-probe к edge:443` → НАСТОЯЩИЙ yandex-серт) недостижим на этом edge:
-firewall (`roles/firewall/templates/nftables.conf.j2`, chain `output`) **намеренно
-запирает uid `mtg` на localhost** — `meta skuid "mtg" ct state new reject with
-icmpx admin-prohibited` режет любой прямой внешний коннект mtg, чтобы весь его
-трафик шёл только через SOCKS-цепочку на гейтвей. Поэтому mtg НЕ может сам сходить
-за живым сертом Yandex (попытка → `no route to host` / `operation not permitted`).
-`[domain-fronting]` оставлен на `ip = 127.0.0.1`, `port = {{ mtg_domain_fronting_port }}`
-(8443) — локальная заглушка `ru_fronting`, всегда достижимая и отдающая валидный
-LE-серт edge (`home12.ru`). Trade-off (принят): active-probe видит валидный
-home12.ru-серт небольшого сайта (правдоподобное прикрытие), но НЕ yandex-серт;
-несоответствие SNI↔cert заметно лишь зонду, который реплеит перехваченный
-клиентский ClientHello (узкий, таргетированный сценарий). Альтернатива (nginx
-stream-passthrough на :8443 → реальный Yandex, mtg по-прежнему только localhost)
-сознательно НЕ выбрана: правит защищённую `ru_fronting` и добавляет узлов.
-`mtg_dns` для fronting роли не играет (таргет — `ip`, без резолва), оставлен
-дефолтным. Менять домен в секрете на уже развёрнутом хосте — флагом
-`mtg_secret_regenerate` (см. ниже).
-
 ## Порты
 
 ### Edge
@@ -146,7 +99,6 @@ stream-passthrough на :8443 → реальный Yandex, mtg по-прежне
 |---:|---|---|---|---|
 | 22 | TCP | public | sshd | управление |
 | 80 | TCP | public | nginx/certbot | ACME HTTP-01 |
-| 443 | TCP | public | mtg/nginx | Telegram MTProto FakeTLS (маскировка под `uniqr.pay.yandex.net`) / fronting |
 | 8388 | TCP/UDP | public | sing-box `router-in` | legacy SS2022 leg home→edge (режется ТСПУ) |
 | 39443 | UDP | public | sing-box `hy2-in` | leg home→edge **primary**: hysteria2 + obfs salamander (LE-серт edge) |
 | 8843 | TCP | public | sing-box `shadowtls-in` | leg home→edge **fallback**: shadowtls v3 → внутр. SS2022 |
@@ -162,9 +114,8 @@ stream-passthrough на :8443 → реальный Yandex, mtg по-прежне
 | 22 | TCP | public | sshd | управление |
 | 80 | TCP | public | certbot standalone | ACME HTTP-01 для ocserv |
 | 443 | TCP/UDP | public | ocserv | OpenConnect/AnyConnect VPN |
-| 39444 | UDP | public, restricted by firewall (edge IP only) | sing-box `hy2-in` | нога edge→DE **primary**: hysteria2 + obfs salamander (TLS = LE-серт ocserv_domain) |
-| 8943 | TCP | public, restricted by firewall (edge IP only) | sing-box `shadowtls-in` | нога edge→DE **fallback**: shadowtls v3 → внутр. SS2022 |
-| 4433 | TCP | public, restricted by firewall | sing-box `ss-in` | нога edge→DE **last resort**: legacy SS2022 ingress с edge-узла |
+| 8943 | TCP | public, restricted by firewall (edge IP only) | sing-box `shadowtls-in` | нога edge→DE **active**: shadowtls v3 → внутр. SS2022 |
+| 4433 | TCP | public, restricted by firewall | sing-box `ss-in` | нога edge→DE **manual fallback**: legacy SS2022 ingress с edge-узла |
 | 53 | TCP/UDP | VPN interface | unbound | DNS для VPN-клиентов |
 | 56000 | UDP | public | wdtt-server | WireGuard over DTLS/VK TURN |
 | 56001 | UDP | loopback | wdtt-server | внутренний WireGuard listener |
@@ -218,7 +169,6 @@ Firewall реализован через nftables.
 | nftables ruleset | `roles/firewall/templates/nftables.conf.j2` |
 | ocserv NAT | `roles/de_ocserv/templates/ocserv-nat.nft.j2` |
 | sing-box edge/gateway | `roles/ru_singbox`, `roles/de_singbox` |
-| mtg | `roles/ru_mtg` |
 | wdtt service + NAT | `roles/de_wdtt/templates/wdtt.service.j2`, `wdtt-nat.nft.j2` |
 | wdtt пользователи | `roles/de_wdtt/templates/passwords.json.j2` |
 | nfqws binary + init | `roles/owrt_nfqws/tasks/main.yml` (качает zapret с GitHub) |
@@ -230,9 +180,9 @@ Firewall реализован через nftables.
 
 Слои карты:
 
-1. **Nodes** — edge VPS, gateway VPS, clients, upstream DNS, Telegram DC, Internet.
-2. **Public ingress** — SSH, ACME, mtg, browser proxy, ocserv.
-3. **Encrypted tunnels** — browser/Telegram chain edge -> gateway, VPN client -> gateway.
+1. **Nodes** — edge VPS, gateway VPS, clients, upstream DNS, Internet.
+2. **Public ingress** — SSH, ACME, browser proxy, home→edge туннель, ocserv.
+3. **Encrypted tunnels** — browser/home chain edge -> gateway, VPN client -> gateway.
 4. **DNS plane** — VPN client -> unbound -> DoT upstream.
 5. **Firewall plane** — input, forward, NAT, edge-IP restriction.
 6. **Ansible ownership** — какая роль владеет каким сервисом и файлом.
@@ -250,7 +200,7 @@ Firewall реализован через nftables.
 
 ### Транспорт leg home→edge
 
-Категория `proxy` (туннель) физически идёт роутер → **edge** одним из транспортов, и уже на edge все они маршрутизируются в outbound `de-out` (нога edge → gateway, см. ниже). **Edge всегда слушает оба** новых inbound (`hy2-in` + `shadowtls-in`). Роли роутера — **`owrt_singbox`** (sing-box TUN) + **`owrt_nfqws`** (DPI-десинк); прежние `flint_*` сняты как нестабильные и переписаны с нуля как `owrt_*`.
+Категория `proxy` (туннель) физически идёт роутер → **edge** одним из транспортов, и уже на edge все они маршрутизируются в активный outbound плеча edge → gateway (`de_uplink_transport`, см. ниже). **Edge всегда слушает оба** новых inbound (`hy2-in` + `shadowtls-in`). Роли роутера — **`owrt_singbox`** (sing-box TUN) + **`owrt_nfqws`** (DPI-десинк); прежние `flint_*` сняты как нестабильные и переписаны с нуля как `owrt_*`.
 
 > **1-й проход — hysteria2-only на роутере.** `owrt_singbox` рендерит только hysteria2-outbound (тег `proxy`) и проверяет `assert router_primary_transport == hysteria2`. shadowtls-outbound на роутере — отдельным 2-м проходом, когда hy2 подтверждён рабочим с LAN. Поскольку edge уже слушает `shadowtls-in`, переключение тогда = добавить outbound + `ansible-playbook router.yml` (edge не трогаем).
 
@@ -260,21 +210,23 @@ Firewall реализован через nftables.
 | shadowtls v3 → внутренний SS2022 (detour) | `shadowtls_port` 8843/tcp | TLS1.3-хендшейк к `shadowtls_handshake_server` | ⏳ 2-й проход (edge `shadowtls-in` готов) | **fallback** — если провайдер режет UDP/QUIC |
 | «голый» SS2022 `router-in` | `router_ss_port` 8388/tcp | нет | ⚪ legacy, не используется | режется ТСПУ по поведению/JA3 (первый шифроблок дропается) |
 
-Brutal **выключен сознательно**: `up_mbps`/`down_mbps` не задаются ни на edge, ни на роутере — на стабильном канале фиксированная полоса даёт аномально ровный паттерн, отдельный признак для поведенческого детекта. На edge inbound'ы `router-in`, `hy2-in`, `shadowtls-ss-in` сведены в одно route-правило → `de-out`. hysteria2 TLS использует тот же LE-серт edge, что nginx/mtg; certbot deploy-hook рестартит sing-box при обновлении серта. Требуется sing-box ≥ 1.12 на роутере (apk) — hysteria2 и shadowtls v3 поддержаны (проект на 1.13.x).
+Brutal **выключен сознательно**: `up_mbps`/`down_mbps` не задаются ни на edge, ни на роутере — на стабильном канале фиксированная полоса даёт аномально ровный паттерн, отдельный признак для поведенческого детекта. На edge inbound'ы `router-in`, `hy2-in`, `shadowtls-ss-in` сведены в одно route-правило → активный outbound плеча edge→DE. hysteria2 TLS использует тот же LE-серт edge, что nginx; certbot deploy-hook рестартит sing-box при обновлении серта. Требуется sing-box ≥ 1.12 на роутере (apk) — hysteria2 и shadowtls v3 поддержаны (проект на 1.13.x).
 
-### Транспорт leg edge→DE (устранение асимметрии)
+### Транспорт leg edge→DE (один транспорт)
 
-Долгое время нога роутер→edge была укреплена (hy2/shadowtls), а **единственное звено, реально пересекающее границу** — edge → DE — оставалось «голым» Shadowsocks-2022 на `:4433`. Для Telegram-пути это критично: `phone → FakeTLS :443 mtg → local socks :1081 → ru_singbox → de-out → DE → api.telegram.org`. Голый SS2022 на иностранный IP ТСПУ заносит в «чёрную дыру» по тому же поведенческому + JA3/JA4 анализу (handshake проходит, payload дропается) — это и была причина периодических отказов Telegram.
+Edge → DE — **единственное звено, реально пересекающее границу**. Какое-то время оно было укреплено симметрично роутер→edge — urltest-группой `de-out` из трёх кандидатов (hysteria2 + shadowtls + legacy ss). Это **схлопнуто до одного TCP-транспорта** по двум причинам:
 
-Нога edge→DE укреплена **симметрично** роутер→edge: DE поднимает `hy2-in` (primary) + `shadowtls-in` (fallback) **параллельно** старому `ss-in :4433`, а edge гоняет их через urltest-группу `de-out`. **direct к Telegram не добавляем** — прямой коннект на `api.telegram.org` ТСПУ режет.
+1. **QUIC здесь нестабилен.** Трансграничный RU→DE QUIC режется сильнее, чем TCP; hysteria2 на этом плече давал переменную надёжность, а от единственной реальной угрозы плеча (блок провайдера Fornex по IP/ASN) UDP всё равно не страхует — TCP предсказуемее. hysteria2-outbound `de-hy2` и inbound `hy2-in` на DE сняты.
+2. **urltest давал DNS-петлю.** Health-check `de-out` ходил по `https://www.gstatic.com/generate_204`, для чего нужен резолв через `remote-dns`, а `remote-dns` детурил в саму группу `de-out` → циклическая зависимость. Это и была причина **периодических обрывов**.
 
-| Транспорт edge→DE | Порт на DE | Маскировка | Роль в `de-out` |
+Активный транспорт выбирается переменной `de_uplink_transport` (по образцу `router_primary_transport` на роутере). DE держит оба inbound постоянно, поэтому переключение = смена переменной + редеплой только edge.
+
+| Транспорт edge→DE | Порт на DE | Маскировка | `de_uplink_transport` |
 |---|---|---|---|
-| hysteria2 поверх QUIC/UDP (`de-hy2`) | `de_hy2_port` 39444/udp | obfs salamander + TLS на LE-серте `ocserv_domain` | **primary** — QUIC не разбирается TCP-ориентированным ТСПУ |
-| shadowtls v3 → внутр. SS2022 (`de-shadowtls-ss`→`de-shadowtls-tls`) | `de_shadowtls_port` 8943/tcp | TLS1.3-хендшейк к `de_shadowtls_handshake_server` | **fallback** — если режут UDP/QUIC |
-| «голый» SS2022 (`de-ss`) | `singbox_server_port` 4433/tcp | нет | **last resort** (`de_ss_legacy_enable`), включён как страховка |
+| shadowtls v3 → внутр. SS2022 (`de-shadowtls-ss`→`de-shadowtls-tls`) | `de_shadowtls_port` 8943/tcp | TLS1.3-хендшейк к `de_shadowtls_handshake_server` | `shadowtls` (**default**, active) |
+| «голый» SS2022 (`de-ss`) | `singbox_server_port` 4433/tcp | нет | `ss` (manual fallback) |
 
-`de-out` = `urltest` по `https://www.gstatic.com/generate_204` (interval 30s, tolerance 50): sing-box сам выбирает живой транспорт с минимальной задержкой и переключается при отказе. Все ссылки на `de-ss` в `ru_singbox` (route `final`, правило inbound-группы, `detour` у remote-dns) переведены на `de-out`. Правила `direct` (DE/32 → direct, `ssh_port` → direct) **не тронуты** — они нужны, чтобы сами транспорты до DE шли напрямую, без петли. DE-firewall открывает 39444/udp и 8943/tcp **только с IP edge** (рядом с легаси-правилом для :4433). Cert: `hy2-in` на DE использует LE-серт `ocserv_domain` (выпускает `de_ocserv`); в `site.yml` `de_ocserv` теперь идёт **до** `de_singbox`, чтобы серт существовал к старту sing-box.
+`route.final`, правило inbound-группы (`router-in`/`hy2-in`/`shadowtls-ss-in`) и `detour` у `remote-dns` в `ru_singbox` указывают на **единственный активный тег** (`de-shadowtls-ss` или `de-ss`) — петля устранена. Правила `direct` (DE/32 → direct, `ssh_port` → direct) **не тронуты** — они нужны, чтобы сам транспорт до DE шёл напрямую, без петли. DE-firewall открывает 8943/tcp **только с IP edge** (рядом с легаси-правилом для :4433). shadowtls/ss-in на DE сертов не требуют, поэтому предусловие LE-серта для `de_singbox` снято; `de_ocserv` по-прежнему владеет сертом `ocserv_domain` (для самого ocserv) и идёт до `de_singbox` в `site.yml` без жёсткой зависимости.
 
 ### Split-DNS на роутере
 
@@ -295,8 +247,8 @@ FakeIP **не используется**: dnsmasq на роутере стоит
 
 - Перейти с открытых паролей в `group_vars/all.yml` на Ansible Vault или SOPS.
 - Разделить `vpn_users` и `proxy_users`, если появятся разные политики доступа.
-- Добавить healthchecks: ocserv login test, DNS test через VPN, proxy egress IP test, mtg doctor (на роутере sing-box уже есть cron-watchdog).
-- Добавить backup/restore для `/etc/ocserv/ocpasswd` и `/etc/mtg/secret`.
+- Добавить healthchecks: ocserv login test, DNS test через VPN, proxy egress IP test (на роутере sing-box уже есть cron-watchdog).
+- Добавить backup/restore для `/etc/ocserv/ocpasswd`.
 - Явно описать IPv6-политику: disabled, routed или filtered.
 - Добавить rate limiting для публичных proxy endpoints.
 - Добавить fail2ban/nftables dynamic sets для SSH/ocserv brute force.

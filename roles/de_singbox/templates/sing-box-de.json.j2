@@ -32,25 +32,6 @@
       }{% endif %}
     },
     {
-      "type": "hysteria2",
-      "tag": "hy2-in",
-      "listen": "0.0.0.0",
-      "listen_port": {{ de_hy2_port }},
-      "obfs": {
-        "type": "salamander",
-        "password": "{{ de_hy2_obfs_password }}"
-      },
-      "users": [
-        { "name": "edge", "password": "{{ de_hy2_password }}" }
-      ],
-      "tls": {
-        "enabled": true,
-        "alpn": ["h3"],
-        "certificate_path": "/etc/letsencrypt/live/{{ ocserv_domain }}/fullchain.pem",
-        "key_path": "/etc/letsencrypt/live/{{ ocserv_domain }}/privkey.pem"
-      }
-    },
-    {
       "type": "shadowtls",
       "tag": "shadowtls-in",
       "listen": "0.0.0.0",

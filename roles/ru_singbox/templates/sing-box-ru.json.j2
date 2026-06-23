@@ -1,3 +1,4 @@
+{%- set de_active = 'de-ss' if (de_uplink_transport | default('shadowtls')) == 'ss' else 'de-shadowtls-ss' -%}
 {
   "log": {
     "disabled": false,
@@ -11,7 +12,7 @@
         "tag": "remote-dns",
         "server": "1.1.1.1",
         "server_port": 53,
-        "detour": "de-out"
+        "detour": "{{ de_active }}"
       },
       {
         "type": "local",
@@ -118,22 +119,6 @@
   ],
   "outbounds": [
     {
-      "type": "hysteria2",
-      "tag": "de-hy2",
-      "server": "{{ hostvars[groups['de_vps'][0]].ansible_host | default(groups['de_vps'][0]) }}",
-      "server_port": {{ de_hy2_port }},
-      "password": "{{ de_hy2_password }}",
-      "obfs": {
-        "type": "salamander",
-        "password": "{{ de_hy2_obfs_password }}"
-      },
-      "tls": {
-        "enabled": true,
-        "server_name": "{{ ocserv_domain }}",
-        "alpn": ["h3"]
-      }
-    },
-    {
       "type": "shadowtls",
       "tag": "de-shadowtls-tls",
       "server": "{{ hostvars[groups['de_vps'][0]].ansible_host | default(groups['de_vps'][0]) }}",
@@ -171,14 +156,6 @@
       }{% endif %}
     },
     {
-      "type": "urltest",
-      "tag": "de-out",
-      "outbounds": ["de-hy2", "de-shadowtls-ss"{% if de_ss_legacy_enable | bool %}, "de-ss"{% endif %}],
-      "url": "https://www.gstatic.com/generate_204",
-      "interval": "5m",
-      "tolerance": 50
-    },
-    {
       "type": "direct",
       "tag": "direct"
     }
@@ -189,12 +166,12 @@
     {% else %}
     "default_interface": "{{ ru_singbox_default_interface }}",
     {% endif %}
-    "final": "de-out",
+    "final": "{{ de_active }}",
     "default_domain_resolver": {
       "server": "remote-dns"
     },
     "rules": [
-      { "inbound": ["router-in", "hy2-in", "shadowtls-ss-in"], "outbound": "de-out" },
+      { "inbound": ["router-in", "hy2-in", "shadowtls-ss-in"], "outbound": "{{ de_active }}" },
       {
         "ip_cidr": ["{{ hostvars[groups['de_vps'][0]].ansible_host | default(groups['de_vps'][0]) }}/32"],
         "outbound": "direct"
