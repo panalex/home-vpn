@@ -53,7 +53,11 @@
       "listen": "127.0.0.1",
       "network": "tcp",
       "method": "{{ de_shadowtls_ss_method }}",
-      "password": "{{ de_shadowtls_ss_secret }}"
+      "password": "{{ de_shadowtls_ss_secret }}"{% if singbox_server_multiplex | bool %},
+      "multiplex": {
+        "enabled": true,
+        "padding": true
+      }{% endif %}
     }
   ],
   "outbounds": [
