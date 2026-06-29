@@ -84,7 +84,7 @@ All secrets and host-specific config live in `group_vars/all.yml` (gitignored). 
 - `router_ss_secret` — separate SS2022 secret for the legacy router→edge SS2022 `router-in` :8388 (do not reuse the chain secret)
 - `router_primary_transport` — active home→edge transport on the router: `hysteria2` (primary, UDP/QUIC) | `shadowtls` (fallback, TCP). `owrt_singbox` renders the matching `proxy` outbound and asserts the var is one of the two. Edge always listens on both inbounds, so switching = change the var + redeploy the router only. Keep `hysteria2` unless the ISP cuts QUIC/UDP
 - `hy2_port` / `hy2_password` / `hy2_obfs_password` — hysteria2 inbound (edge) / outbound (router). UDP. TLS uses the edge LE cert (`/etc/letsencrypt/live/{{ domain }}/`); obfs salamander. No `up_mbps`/`down_mbps` (Brutal off, by design)
-- `shadowtls_port` / `shadowtls_password` / `shadowtls_handshake_server` — shadowtls v3 (TCP fallback). Already wired on edge (`shadowtls-in`); the router outbound lands in the 2nd pass. `shadowtls_handshake_server` is the masquerade TLS1.3 site, shared by edge `handshake.server` and (future) router `tls.server_name`
+- `shadowtls_port` / `shadowtls_password` / `shadowtls_handshake_server` — shadowtls v3 (TCP fallback). Wired on edge (`shadowtls-in`); the router renders the matching outbound when `router_primary_transport: shadowtls`. `shadowtls_handshake_server` is the masquerade TLS1.3 site, shared by edge `handshake.server` and router `tls.server_name`
 - `shadowtls_ss_method` / `shadowtls_ss_secret` — internal SS2022 under shadowtls (NEW key — not `router_ss_secret`, not the :4433 chain secret)
 - `de_uplink_transport` — active edge→DE transport: `shadowtls` (default) | `ss`. DE listens on both inbounds always; switching = change this var + redeploy edge only
 - `de_shadowtls_port` / `de_shadowtls_password` / `de_shadowtls_handshake_server` / `de_shadowtls_ss_method` / `de_shadowtls_ss_secret` — shadowtls v3 edge→DE uplink (active). NEW keys — not the router-leg shadowtls keys, not the :4433 chain secret. No local TLS cert needed on DE (shadowtls masquerades to the handshake server)
@@ -132,7 +132,7 @@ ssh -p 2222 root@127.0.0.1                 # lands on the router
 Edge — confirm the home→edge leg inbounds are listening:
 ```bash
 ss -lnup | grep <hy2_port>                 # hysteria2 (UDP) — primary
-ss -lntp | grep <shadowtls_port>           # shadowtls (TCP) — fallback (edge always on; router outbound is a 2nd pass)
+ss -lntp | grep <shadowtls_port>           # shadowtls (TCP) — fallback (edge always on; router renders it when router_primary_transport: shadowtls)
 ```
 
 ## Known gaps (from docs/architecture.md)
