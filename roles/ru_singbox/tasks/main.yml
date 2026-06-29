@@ -5,7 +5,7 @@
 
 - name: Download sing-box package
   ansible.builtin.get_url:
-    url: "https://github.com/SagerNet/sing-box/releases/download/v{{ singbox_version }}/sing-box_{{ singbox_version }}_linux_{{ singbox_pkg_arch }}.deb"
+    url: "http://github.com/SagerNet/sing-box/releases/download/v{{ singbox_version }}/sing-box_{{ singbox_version }}_linux_{{ singbox_pkg_arch }}.deb"
     dest: "/tmp/sing-box_{{ singbox_version }}_linux_{{ singbox_pkg_arch }}.deb"
     mode: '0644'
 
