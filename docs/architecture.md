@@ -202,12 +202,12 @@ Firewall реализован через nftables.
 
 Категория `proxy` (туннель) физически идёт роутер → **edge** одним из транспортов, и уже на edge все они маршрутизируются в активный outbound плеча edge → gateway (`de_uplink_transport`, см. ниже). **Edge всегда слушает оба** новых inbound (`hy2-in` + `shadowtls-in`). Роли роутера — **`owrt_singbox`** (sing-box TUN) + **`owrt_nfqws`** (DPI-десинк); прежние `flint_*` сняты как нестабильные и переписаны с нуля как `owrt_*`.
 
-> **1-й проход — hysteria2-only на роутере.** `owrt_singbox` рендерит только hysteria2-outbound (тег `proxy`) и проверяет `assert router_primary_transport == hysteria2`. shadowtls-outbound на роутере — отдельным 2-м проходом, когда hy2 подтверждён рабочим с LAN. Поскольку edge уже слушает `shadowtls-in`, переключение тогда = добавить outbound + `ansible-playbook router.yml` (edge не трогаем).
+> **Ручной переключатель `router_primary_transport`** (по образцу `de_uplink_transport` на edge). `owrt_singbox` рендерит соответствующий outbound с тегом `proxy`: `hysteria2` (primary) или пару `shadowtls` v3 → внутренний SS2022 (`proxy-stls` + `proxy`, TCP-fallback); `assert` допускает только эти два значения. Edge всегда слушает оба inbound, поэтому переключение = смена переменной + `ansible-playbook router.yml` (edge не трогаем). Роутерный shadowtls-outbound идёт **без multiplex** — симметрично edge-инбаунду `shadowtls-ss-in` (у него mux нет); mux на одном конце = blackhole обратного канала.
 
 | Транспорт первого хопа (роутер → edge) | Порт на edge | Маскировка | Статус на роутере | Назначение |
 |---|---|---|---|---|
 | hysteria2 поверх QUIC/UDP | `hy2_port` 39443/udp | obfs salamander + TLS на LE-серте edge | ✅ активен (`owrt_singbox`) | **primary** — TCP-ориентированный ТСПУ не разбирает QUIC-поток |
-| shadowtls v3 → внутренний SS2022 (detour) | `shadowtls_port` 8843/tcp | TLS1.3-хендшейк к `shadowtls_handshake_server` | ⏳ 2-й проход (edge `shadowtls-in` готов) | **fallback** — если провайдер режет UDP/QUIC |
+| shadowtls v3 → внутренний SS2022 (detour) | `shadowtls_port` 8843/tcp | TLS1.3-хендшейк к `shadowtls_handshake_server` | ✅ реализован (`router_primary_transport: shadowtls`) | **fallback** — если провайдер режет UDP/QUIC |
 | «голый» SS2022 `router-in` | `router_ss_port` 8388/tcp | нет | ⚪ legacy, не используется | режется ТСПУ по поведению/JA3 (первый шифроблок дропается) |
 
 Brutal **выключен сознательно**: `up_mbps`/`down_mbps` не задаются ни на edge, ни на роутере — на стабильном канале фиксированная полоса даёт аномально ровный паттерн, отдельный признак для поведенческого детекта. На edge inbound'ы `router-in`, `hy2-in`, `shadowtls-ss-in` сведены в одно route-правило → активный outbound плеча edge→DE. hysteria2 TLS использует тот же LE-серт edge, что nginx; certbot deploy-hook рестартит sing-box при обновлении серта. Требуется sing-box ≥ 1.12 на роутере (apk) — hysteria2 и shadowtls v3 поддержаны (проект на 1.13.x).
