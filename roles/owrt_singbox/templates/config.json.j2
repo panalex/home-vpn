@@ -33,14 +33,23 @@
   ],
   "outbounds": [
 {#
-  Тег "proxy" (на него указывает route.final) — leg home->edge, ПОКА ТОЛЬКО
-  hysteria2 (UDP/QUIC + obfs salamander): TCP-ориентированный ТСПУ не видит его
-  как поток для DPI-разбора. TLS поверх QUIC валидирует УЖЕ существующий LE-серт
-  edge (tls.server_name = {{ domain }}). Brutal ВЫКЛЮЧЕН сознательно: up/down mbps
-  не задаём (ровный паттерн → поведенческий детект). Про shadowtls-fallback и
-  переключатель router_primary_transport — см. assert в tasks/main.yml (единый
-  источник). Legacy router-in (:8388 SS) на edge остаётся, как outbound не нужен.
+  Тег "proxy" (на него указывает route.final) — leg home->edge. Активный
+  транспорт выбирается router_primary_transport (ручной переключатель, по образцу
+  de_uplink_transport на edge); edge всегда слушает оба inbound (hy2-in +
+  shadowtls-in), переключение = смена переменной + редеплой только роутера. См.
+  assert в tasks/main.yml (единый источник допустимых значений).
+    hysteria2 (primary): UDP/QUIC + obfs salamander — TCP-ориентированный ТСПУ не
+  видит поток для DPI-разбора. TLS поверх QUIC валидирует УЖЕ существующий LE-серт
+  edge (server_name = {{ domain }}). Brutal ВЫКЛЮЧЕН сознательно: up/down mbps не
+  задаём (ровный паттерн → поведенческий детект).
+    shadowtls (fallback): TCP — shadowtls v3 маскирует TLS1.3-handshake под
+  {{ shadowtls_handshake_server }}, внутри SS2022 (метод/secret shadowtls_ss_*).
+  На случай, если ТСПУ срежет QUIC/UDP. multiplex НЕ включаем: edge-инбаунд
+  shadowtls-ss-in идёт без mux — рвать симметрию нельзя (blackhole обратного
+  канала, как было на DE).
+  Legacy router-in (:8388 SS) на edge остаётся, как outbound не нужен.
 #}
+{% if router_primary_transport == 'hysteria2' %}
     {
       "type": "hysteria2",
       "tag": "proxy",
@@ -57,6 +66,27 @@
         "alpn": ["h3"]
       }
     },
+{% else %}
+    {
+      "type": "shadowtls",
+      "tag": "proxy-stls",
+      "server": "{{ _edge_vps_ip }}",
+      "server_port": {{ shadowtls_port }},
+      "version": 3,
+      "password": "{{ shadowtls_password }}",
+      "tls": {
+        "enabled": true,
+        "server_name": "{{ shadowtls_handshake_server }}"
+      }
+    },
+    {
+      "type": "shadowsocks",
+      "tag": "proxy",
+      "method": "{{ shadowtls_ss_method }}",
+      "password": "{{ shadowtls_ss_secret }}",
+      "detour": "proxy-stls"
+    },
+{% endif %}
     { "type": "direct", "tag": "direct" },
     { "type": "block",  "tag": "block" },
     {
