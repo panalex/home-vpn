@@ -11,9 +11,11 @@ revocation never touches the main stack.
 
 ## What it does
 
-- Installs AmneziaWG via the **DKMS kernel module** from the Amnezia PPA
-  (`amneziawg-dkms` + `amneziawg-tools`) on Ubuntu 24.04, loads the `amneziawg`
-  module, persists autoload.
+- Installs AmneziaWG from the Amnezia PPA **`ppa:amnezia/ppa`** on Ubuntu 24.04:
+  `amneziawg` (userspace tools — `awg`/`awg-quick`) + `amneziawg-dkms` (the
+  **DKMS kernel module**). Loads the `amneziawg` module, persists autoload.
+  (The PPA has no separate `amneziawg-tools` package — the tools live in
+  `amneziawg`.)
 - Generates a server keypair, a random UDP listen port (30000–50000), and a
   **shared ASC parameter set** — once — into `secrets/awg_family.yml` (control
   node, gitignored). Reused on every later run (idempotent).
@@ -83,11 +85,14 @@ fails loudly on a collision.
 ## Recovery: kernel module fails to load
 
 If `amneziawg-dkms` fails to build/load (kernel mismatch, missing headers), the
-play stops at the "module failed to load" assertion. Fall back to userspace:
+play stops at the "module failed to load" assertion. Fall back to the userspace
+implementation. `amneziawg-go` is **not** in `ppa:amnezia/ppa`, so build it from
+source (needs Go):
 
 ```bash
 # On the DE host:
-apt-get install -y amneziawg-go        # userspace implementation
+git clone https://github.com/amnezia-vpn/amneziawg-go /tmp/awg-go
+cd /tmp/awg-go && make && install -m0755 amneziawg-go /usr/bin/amneziawg-go
 # Point awg-quick at the userspace backend for this interface:
 export WG_QUICK_USERSPACE_IMPLEMENTATION=amneziawg-go
 systemctl restart awg-quick@awg-family

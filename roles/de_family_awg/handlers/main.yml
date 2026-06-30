@@ -1,15 +1,19 @@
 ---
+# Handlers restart/reload real services, which can't be simulated under --check
+# (the units may not exist yet) — so they no-op in check mode.
 - name: Restart awg-family
   ansible.builtin.systemd:
     name: "awg-quick@{{ awg_family_interface }}"
     state: restarted
     daemon_reload: true
+  when: not ansible_check_mode
 
 - name: Restart unbound-family
   ansible.builtin.systemd:
     name: unbound-family
     state: restarted
     daemon_reload: true
+  when: not ansible_check_mode
 
 # Re-applies the full ruleset (central firewall + all /etc/nftables.d drop-ins).
 # Same idiom as de_wdtt so our drop-in is picked up without touching the
@@ -17,3 +21,4 @@
 - name: Apply nftables
   ansible.builtin.command: nft -f /etc/nftables.conf
   changed_when: true
+  when: not ansible_check_mode

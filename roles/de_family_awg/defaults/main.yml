@@ -53,5 +53,7 @@ awg_family_peers:
 # --- AmneziaWG install ------------------------------------------------------
 # DKMS kernel module from the Amnezia PPA (preferred); userspace amneziawg-go
 # is the documented fallback (README) if the module fails to build/load.
-awg_family_ppa: "ppa:amnezia/amnezia"
+# PPA ~amnezia/ppa ships `amneziawg` (tools + awg-quick) and `amneziawg-dkms`
+# (kernel module). NB: it does NOT ship a separate `amneziawg-tools` package.
+awg_family_ppa: "ppa:amnezia/ppa"
 awg_family_kernel_module: "amneziawg"

@@ -1,14 +1,7 @@
 ---
 # Server identity + shared ASC params. Generated once, persisted to the control
 # node (gitignored), reused forever after — full idempotency.
-
-- name: Check for existing server secrets
-  ansible.builtin.stat:
-    path: "{{ awg_family_secrets_file }}"
-  delegate_to: localhost
-  become: false
-  run_once: true
-  register: _awg_secrets_stat
+# _awg_secrets_stat is registered by tasks/main.yml before this file is imported.
 
 - name: Generate server identity + shared ASC (first run only)
   when: not _awg_secrets_stat.stat.exists

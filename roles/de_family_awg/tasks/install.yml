@@ -14,24 +14,37 @@
     state: present
     update_cache: false
 
-- name: Install AmneziaWG (DKMS module + tools) and unbound
+# `amneziawg` = userspace tools (awg, awg-quick); `amneziawg-dkms` = kernel
+# module. (~amnezia/ppa has no separate amneziawg-tools package.)
+- name: Install AmneziaWG (tools + DKMS module) and unbound
   ansible.builtin.apt:
     name:
+      - amneziawg
       - amneziawg-dkms
-      - amneziawg-tools
       - unbound
       - dns-root-data
       - openssl
     state: present
     update_cache: true
   register: awg_family_pkg
+  # In --check the PPA above isn't actually added, so apt can't see `amneziawg`
+  # yet ("No package matching ... is available"). Soft-pass only that exact
+  # case in check mode so a dry run previews cleanly; any other apt failure
+  # (and every real run) still fails hard.
+  failed_when:
+    - awg_family_pkg is failed
+    - not (ansible_check_mode and ('No package matching' in (awg_family_pkg.msg | default(''))))
 
+# The kernel-module dance is meaningless in --check (the package isn't really
+# installed), so skip it there — keeps a dry run from aborting on a module that
+# can't exist yet.
 - name: Load the amneziawg kernel module
   community.general.modprobe:
     name: "{{ awg_family_kernel_module }}"
     state: present
   register: awg_family_modprobe
   failed_when: false
+  when: not ansible_check_mode
 
 - name: Persist module autoload at boot
   ansible.builtin.copy:
@@ -40,7 +53,9 @@
     owner: root
     group: root
     mode: '0644'
-  when: awg_family_modprobe.failed | default(false) == false
+  when:
+    - not ansible_check_mode
+    - awg_family_modprobe.failed | default(false) == false
 
 - name: Warn if the kernel module failed to load (manual fallback required)
   ansible.builtin.fail:
@@ -49,7 +64,9 @@
       The DKMS build likely failed for kernel {{ ansible_facts['kernel'] }}.
       Fall back to userspace amneziawg-go per roles/de_family_awg/README.md,
       then re-run with the module path bypassed.
-  when: awg_family_modprobe.failed | default(false)
+  when:
+    - not ansible_check_mode
+    - awg_family_modprobe.failed | default(false)
 
 - name: Enable IPv4 forwarding (own sysctl drop-in, isolated from main stack)
   ansible.posix.sysctl:
