@@ -337,3 +337,24 @@ nfqws_version: "72.1"
 # mgmt_user: rtun
 # mgmt_reverse_port: 2222
 # mgmt_ssh_key: "{{ playbook_dir }}/secrets/rtun_ed25519"
+
+# =============================================================================
+# Isolated AmneziaWG 2.0 family endpoint (de_family_awg / family.yml)
+# =============================================================================
+# Отдельный AWG-эндпоинт на DE для роутера родственника (Keenetic, Йошкар-Ола,
+# Ростелеком/агрессивный DPI). Полностью изолирован от sing-box-стека: свой порт,
+# подсеть 10.42.0.0/24, свой unbound на 10.42.0.1:53 (DoT), свои ключи и nft.
+# Деплой ОТДЕЛЬНЫМ плейбуком: ansible-playbook -i inventory.ini family.yml
+#
+# Все остальные параметры имеют дефолты в roles/de_family_awg/defaults.
+# Порт (random 30000-50000), ключи сервера и общий ASC-набор генерятся ОДИН раз
+# в secrets/awg_family.yml; ключи пиров — в secrets/awg_family_peers/<name>.yml
+# (всё gitignored). Клиентские .conf → client_configs/awg-family/<name>.conf.
+#
+# ASC — ОБЩИЙ на интерфейс (AWG не умеет per-peer ASC на одном интерфейсе):
+# один набор Jc/Jmin/Jmax/S1-S4/H1-H4/I1 у сервера и у каждого пира.
+#
+# awg_family_enabled: true       # обязателен для деплоя (дефолт false)
+# awg_family_egress_iface: eth0  # дефолт = ansible_default_ipv4.interface
+# awg_family_peers:
+#   - { name: "mama-keenetic-yola", ip: "10.42.0.10" }
