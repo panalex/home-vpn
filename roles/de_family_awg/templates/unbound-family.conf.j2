@@ -1,0 +1,63 @@
+# {{ ansible_managed }}
+# Dedicated unbound for the AmneziaWG family endpoint. Standalone config —
+# deliberately does NOT include /etc/unbound/unbound.conf.d/, so it is fully
+# isolated from the main-stack de_unbound instance. Bound to the tunnel IP only.
+server:
+    verbosity: 1
+    # Tunnel IP only — never the public interface.
+    interface: {{ awg_family_server_ip }}
+    port: 53
+    # Bind the tunnel IP even if it appears slightly before/after the link is up.
+    ip-freebind: yes
+
+    do-udp: yes
+    do-tcp: yes
+    do-ip4: yes
+    do-ip6: no
+
+    # Only family clients on the tunnel subnet; refuse everything else.
+    access-control: {{ awg_family_subnet }} allow
+    access-control: 0.0.0.0/0 refuse
+
+    # Run as a standalone instance (own unit, no chroot/pidfile clash with the
+    # packaged unbound.service).
+    username: "unbound"
+    directory: "/etc/unbound"
+    chroot: ""
+    pidfile: ""
+    use-syslog: yes
+    do-daemonize: no
+
+    # Hygiene
+    hide-identity: yes
+    hide-version: yes
+    qname-minimisation: yes
+    prefetch: yes
+    prefetch-key: yes
+    do-not-query-localhost: no
+    aggressive-nsec: yes
+    harden-dnssec-stripped: yes
+    harden-glue: yes
+    harden-below-nxdomain: yes
+    use-caps-for-id: no
+
+    # Cache sized for a handful of devices.
+    cache-min-ttl: 60
+    cache-max-ttl: 86400
+    msg-cache-size: 16m
+    rrset-cache-size: 32m
+
+    log-queries: no
+    log-replies: no
+    log-servfail: yes
+
+    trust-anchor-file: "/usr/share/dns/root.key"
+    tls-cert-bundle: "/etc/ssl/certs/ca-certificates.crt"
+
+# All queries forwarded over DoT — no plaintext upstream.
+forward-zone:
+    name: "."
+    forward-tls-upstream: yes
+{% for u in awg_family_dns_upstream %}
+    forward-addr: {{ u.ip }}@{{ u.port }}#{{ u.sni }}
+{% endfor %}

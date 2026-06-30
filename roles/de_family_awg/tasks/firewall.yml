@@ -1,0 +1,17 @@
+---
+# Single nftables drop-in. The central firewall role renders the ruleset with
+# `flush ruleset`, defines `table inet filter` (input/forward policy drop), then
+# ends with `include "/etc/nftables.d/*.conf"`. nftables merges by table+chain,
+# so re-declaring `table inet filter { chain input { ... } }` here APPENDS our
+# accept rules to the existing chains — no edit to the firewall role, and it
+# survives every `nft -f /etc/nftables.conf` reload. NAT lives in its own table
+# (de_wdtt idiom). See README for why PostUp nft rules were rejected.
+
+- name: Deploy awg-family nftables drop-in
+  ansible.builtin.template:
+    src: awg-family.nft.j2
+    dest: /etc/nftables.d/awg-family.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Apply nftables

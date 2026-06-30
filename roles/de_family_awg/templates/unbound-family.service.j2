@@ -1,0 +1,21 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Unbound DNS resolver (AmneziaWG family endpoint, {{ awg_family_server_ip }})
+Documentation=man:unbound(8)
+After=network-online.target awg-quick@{{ awg_family_interface }}.service nftables.service
+Wants=network-online.target
+# Binds the tunnel IP, so the interface must exist first.
+Requires=awg-quick@{{ awg_family_interface }}.service
+
+[Service]
+Type=simple
+# -d foreground (managed by systemd), -p no PID file, dedicated config.
+ExecStart=/usr/sbin/unbound -d -p -c {{ awg_family_dns_config }}
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=3
+AmbientCapabilities=CAP_NET_BIND_SERVICE CAP_NET_ADMIN
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE CAP_NET_ADMIN CAP_SETUID CAP_SETGID
+
+[Install]
+WantedBy=multi-user.target

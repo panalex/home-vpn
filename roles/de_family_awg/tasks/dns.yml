@@ -1,0 +1,23 @@
+---
+# Dedicated unbound instance bound to the tunnel IP only. Fully separate from
+# the main-stack de_unbound: own config file (does NOT read unbound.conf.d/),
+# own systemd unit, starts after the AWG interface is up.
+
+- name: Deploy unbound-family config
+  ansible.builtin.template:
+    src: unbound-family.conf.j2
+    dest: "{{ awg_family_dns_config }}"
+    owner: root
+    group: root
+    mode: '0644'
+    validate: '/usr/sbin/unbound-checkconf %s'
+  notify: Restart unbound-family
+
+- name: Deploy unbound-family systemd unit
+  ansible.builtin.template:
+    src: unbound-family.service.j2
+    dest: /etc/systemd/system/unbound-family.service
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart unbound-family
