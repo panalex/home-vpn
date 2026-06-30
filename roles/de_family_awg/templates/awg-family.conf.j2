@@ -1,0 +1,30 @@
+# {{ ansible_managed }}
+# AmneziaWG 2.0 family endpoint — server side. Managed by de_family_awg.
+# Routing/NAT/firewall handled by the nftables drop-in (/etc/nftables.d/
+# awg-family.conf) + ip_forward sysctl, NOT by PostUp here (PostUp rules would
+# be wiped on the next central `nft -f` reload). ASC params are shared by every
+# peer (one ASC set per AWG interface).
+[Interface]
+Address = {{ awg_family_server_ip }}/{{ awg_family_subnet_prefix }}
+ListenPort = {{ awg_family_port }}
+PrivateKey = {{ awg_family_server_private_key }}
+Jc = {{ awg_family_asc.jc }}
+Jmin = {{ awg_family_asc.jmin }}
+Jmax = {{ awg_family_asc.jmax }}
+S1 = {{ awg_family_asc.s1 }}
+S2 = {{ awg_family_asc.s2 }}
+S3 = {{ awg_family_asc.s3 }}
+S4 = {{ awg_family_asc.s4 }}
+H1 = {{ awg_family_asc.h1 }}
+H2 = {{ awg_family_asc.h2 }}
+H3 = {{ awg_family_asc.h3 }}
+H4 = {{ awg_family_asc.h4 }}
+I1 = {{ awg_family_asc.i1 }}
+{% for peer in awg_family_peers %}
+
+[Peer]
+# {{ peer.name }}
+PublicKey = {{ awg_family_peer_secrets[peer.name].public_key }}
+PresharedKey = {{ awg_family_peer_secrets[peer.name].preshared_key }}
+AllowedIPs = {{ peer.ip }}/32
+{% endfor %}

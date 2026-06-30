@@ -1,0 +1,33 @@
+#!/usr/sbin/nft -f
+# {{ ansible_managed }}
+# de_family_awg firewall — appended to the central ruleset via the
+# `include "/etc/nftables.d/*.conf"` at the end of /etc/nftables.conf.
+# Re-declaring table+chain MERGES (appends) these rules into the existing
+# `table inet filter` input/forward chains without touching the firewall role.
+
+table inet filter {
+  chain input {
+    # AmneziaWG listen port (handshake + data, UDP)
+    udp dport {{ awg_family_port }} accept
+    # DNS from family tunnel clients to the dedicated unbound on the tunnel IP
+    ip saddr {{ awg_family_subnet }} ip daddr {{ awg_family_server_ip }} udp dport 53 accept
+    ip saddr {{ awg_family_subnet }} ip daddr {{ awg_family_server_ip }} tcp dport 53 accept
+    # Belt-and-suspenders: never serve DNS on the public IP (unbound already
+    # binds {{ awg_family_server_ip }} only; central policy is drop, this makes it explicit)
+    ip daddr {{ ansible_facts['default_ipv4']['address'] }} udp dport 53 drop
+    ip daddr {{ ansible_facts['default_ipv4']['address'] }} tcp dport 53 drop
+  }
+
+  chain forward {
+    iifname "{{ awg_family_interface }}" accept
+    oifname "{{ awg_family_interface }}" ct state established,related accept
+  }
+}
+
+# NAT for family clients — own table, isolated from the main stack (de_wdtt idiom).
+table ip awg_family_nat {
+  chain postrouting {
+    type nat hook postrouting priority 100;
+    ip saddr {{ awg_family_subnet }} oifname "{{ awg_family_egress_iface }}" masquerade
+  }
+}

@@ -1,0 +1,18 @@
+---
+# de_family_awg — constants (not meant to be overridden per-host).
+
+# Shared ASC bounds (AmneziaWG 2.0). Jmin/Jmax are fixed by the project spec;
+# the rest are randomised once within these bounds and persisted. H1..H4 must
+# be mutually distinct (validated in server.yml) and the four WG message-type
+# magics must not collide with the reserved low values, hence the floor of 5.
+awg_family_asc_bounds:
+  jc: { min: 4, max: 12 }
+  s1: { min: 15, max: 150 }
+  s2: { min: 15, max: 150 }
+  s3: { min: 15, max: 150 }
+  s4: { min: 15, max: 150 }
+  h: { min: 5, max: 2147483647 }   # applies to H1..H4
+  i1: { bytes_min: 16, bytes_max: 30 }
+
+awg_family_jmin: 50
+awg_family_jmax: 1000

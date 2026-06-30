@@ -1,0 +1,12 @@
+---
+# Isolated AmneziaWG 2.0 family endpoint on the DE node. Opt-in and separate
+# from site.yml on purpose (different audience / blast radius / SLA). The role
+# is also guarded by awg_family_enabled (default false), so set it true in
+# group_vars/all.yml before running:
+#   ansible-playbook -i inventory.ini family.yml
+- name: Deploy isolated AmneziaWG family endpoint on DE
+  hosts: de_vps
+  become: true
+  roles:
+    - role: de_family_awg
+      tags: [de_family_awg, family_awg, awg]

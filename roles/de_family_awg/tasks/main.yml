@@ -1,0 +1,74 @@
+---
+# de_family_awg orchestrator. Opt-in: does nothing unless awg_family_enabled.
+- name: Skip de_family_awg (awg_family_enabled is false)
+  ansible.builtin.debug:
+    msg: "de_family_awg disabled — set awg_family_enabled: true to deploy"
+  when: not (awg_family_enabled | bool)
+
+- name: Deploy isolated AmneziaWG family endpoint
+  when: awg_family_enabled | bool
+  block:
+    - name: Install AmneziaWG + unbound
+      ansible.builtin.import_tasks: install.yml
+
+    # Provisioning (key/ASC generation + every render) needs the just-installed
+    # awg binary and the generated secrets — neither of which exists under
+    # --check on a fresh host (apt didn't really install, command modules are
+    # skipped). So stat the secrets up front and gate the provisioning steps:
+    # run them on any real play, and under --check only once provisioned. This
+    # lets a dry run preview the install plan and skip cleanly instead of dying
+    # on undefined vars. `_awg_provision` is reused by server.yml.
+    - name: Stat server secrets (gates check-mode provisioning)
+      ansible.builtin.stat:
+        path: "{{ awg_family_secrets_file }}"
+      delegate_to: localhost
+      become: false
+      run_once: true
+      register: _awg_secrets_stat
+
+    - name: Decide whether provisioning steps can run
+      ansible.builtin.set_fact:
+        _awg_provision: "{{ not ansible_check_mode or _awg_secrets_stat.stat.exists }}"
+
+    - name: Note check-mode skip of provisioning on an unprovisioned host
+      ansible.builtin.debug:
+        msg: >-
+          --check on an unprovisioned host: server/peers/dns/firewall steps are
+          skipped (they need the installed awg binary + generated secrets).
+          Re-run without --check to provision.
+      when: not _awg_provision
+
+    - name: Configure server (keys, ASC, interface)
+      ansible.builtin.import_tasks: server.yml
+      when: _awg_provision
+
+    - name: Generate peers + client configs
+      ansible.builtin.import_tasks: peers.yml
+      when: _awg_provision
+
+    - name: Configure dedicated unbound resolver
+      ansible.builtin.import_tasks: dns.yml
+      when: _awg_provision
+
+    - name: Apply firewall rules
+      ansible.builtin.import_tasks: firewall.yml
+      when: _awg_provision
+
+    - name: Flush handlers
+      ansible.builtin.meta: flush_handlers
+
+    - name: Enable and start awg-family
+      ansible.builtin.systemd:
+        name: "awg-quick@{{ awg_family_interface }}"
+        enabled: true
+        state: started
+        daemon_reload: true
+      when: _awg_provision
+
+    - name: Enable and start unbound-family
+      ansible.builtin.systemd:
+        name: unbound-family
+        enabled: true
+        state: started
+        daemon_reload: true
+      when: _awg_provision

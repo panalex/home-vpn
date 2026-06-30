@@ -1,0 +1,104 @@
+---
+# Per-peer keys + PSK, one gitignored file each on the control node. Generated
+# once per peer (stat-guarded), so appending a new peer never disturbs existing
+# ones. Then render the server [Peer] blocks + each client .conf.
+
+- name: Ensure peer-secrets dir exists (control node)
+  ansible.builtin.file:
+    path: "{{ awg_family_peer_secrets_dir }}"
+    state: directory
+    mode: '0700'
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Ensure client-config output dir exists (control node)
+  ansible.builtin.file:
+    path: "{{ awg_family_client_dir }}"
+    state: directory
+    mode: '0700'
+  delegate_to: localhost
+  become: false
+  run_once: true
+
+- name: Stat existing peer secrets
+  ansible.builtin.stat:
+    path: "{{ awg_family_peer_secrets_dir }}/{{ item.name }}.yml"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  loop: "{{ awg_family_peers }}"
+  register: _peer_stats
+
+- name: Determine which peers need key material
+  ansible.builtin.set_fact:
+    _awg_missing_peers: >-
+      {{ awg_family_peers | zip(_peer_stats.results)
+         | selectattr('1.stat.exists', 'equalto', false)
+         | map(attribute='0') | list }}
+  run_once: true
+
+- name: Generate key material for new peers (awg on the DE host)
+  ansible.builtin.shell:
+    cmd: >-
+      set -o pipefail;
+      priv=$(awg genkey);
+      pub=$(printf '%s' "$priv" | awg pubkey);
+      psk=$(awg genpsk);
+      printf '%s\n%s\n%s\n' "$priv" "$pub" "$psk"
+    executable: /bin/bash
+  changed_when: true
+  run_once: true
+  loop: "{{ _awg_missing_peers }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: _peer_gen
+
+- name: Persist new peer secrets (control node, gitignored)
+  ansible.builtin.copy:
+    dest: "{{ awg_family_peer_secrets_dir }}/{{ item.item.name }}.yml"
+    mode: '0600'
+    content: |
+      ---
+      # de_family_awg peer secrets for {{ item.item.name }} — gitignored.
+      # Delete this file to revoke + reissue this peer only.
+      private_key: "{{ item.stdout_lines[0] }}"
+      public_key: "{{ item.stdout_lines[1] }}"
+      preshared_key: "{{ item.stdout_lines[2] }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  loop: "{{ _peer_gen.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+
+- name: Load all peer secrets into a dict
+  ansible.builtin.set_fact:
+    awg_family_peer_secrets: >-
+      {{ awg_family_peer_secrets | default({})
+         | combine({ item.name: (lookup('file', awg_family_peer_secrets_dir ~ '/' ~ item.name ~ '.yml') | from_yaml) }) }}
+  run_once: true
+  loop: "{{ awg_family_peers }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Render server config (interface + all [Peer] blocks)
+  ansible.builtin.template:
+    src: awg-family.conf.j2
+    dest: "{{ awg_family_config_dir }}/{{ awg_family_interface }}.conf"
+    owner: root
+    group: root
+    mode: '0600'
+  notify: Restart awg-family
+
+- name: Render client .conf for each peer (control node, gitignored)
+  ansible.builtin.template:
+    src: peer.conf.j2
+    dest: "{{ awg_family_client_dir }}/{{ item.name }}.conf"
+    mode: '0600'
+  delegate_to: localhost
+  become: false
+  run_once: true
+  loop: "{{ awg_family_peers }}"
+  loop_control:
+    label: "{{ item.name }}"
