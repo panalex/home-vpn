@@ -87,6 +87,39 @@
       "network": "tcp",
       "method": "{{ shadowtls_ss_method }}",
       "password": "{{ shadowtls_ss_secret }}"
+    },
+{# home->edge leg: VLESS+Reality+gRPC на публичном :443 (whitelist/TCP-страховка
+   к hy2). gRPC даёт HTTP/2-mux — веер LAN-флоу из роутерного TUN схлопывается
+   в 1-2 соединения к ОДНОМУ донорскому SNI, снимая поведенческий триггер
+   «много TCP к одному SNI». Reality форвардит реальный TLS1.3-handshake на
+   reality_donor_sni (active-probe видит настоящий донор). hy2-in/shadowtls-in
+   НЕ трогаем — Reality добавляется, не заменяет. Egress тот же: route ниже
+   заворачивает vless-reality-in в активный edge→DE outbound. #}
+    {
+      "type": "vless",
+      "tag": "vless-reality-in",
+      "listen": "0.0.0.0",
+      "listen_port": 443,
+      "users": [
+        { "uuid": "{{ reality_uuid }}" }
+      ],
+      "tls": {
+        "enabled": true,
+        "server_name": "{{ reality_donor_sni }}",
+        "reality": {
+          "enabled": true,
+          "handshake": {
+            "server": "{{ reality_donor_sni }}",
+            "server_port": 443
+          },
+          "private_key": "{{ reality_private_key }}",
+          "short_id": ["{{ reality_short_id }}"]
+        }
+      },
+      "transport": {
+        "type": "grpc",
+        "service_name": "{{ reality_grpc_service_name }}"
+      }
     }{% if ru_public_proxy_enable | bool %},
     {
       "type": "socks",
@@ -171,7 +204,7 @@
       "server": "remote-dns"
     },
     "rules": [
-      { "inbound": ["router-in", "hy2-in", "shadowtls-ss-in"], "outbound": "{{ de_active }}" },
+      { "inbound": ["router-in", "hy2-in", "shadowtls-ss-in", "vless-reality-in"], "outbound": "{{ de_active }}" },
       {
         "ip_cidr": ["{{ hostvars[groups['de_vps'][0]].ansible_host | default(groups['de_vps'][0]) }}/32"],
         "outbound": "direct"

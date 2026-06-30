@@ -1,0 +1,61 @@
+---
+# reality_keys — материал VLESS+Reality для leg home→edge, идемпотентно.
+# По образцу de_mgmt: генерится ОДИН раз и хранится на control node в
+# secrets/reality.yml (gitignored), поэтому порядок плейбуков (site.yml → router.yml)
+# роли не играет — обе стороны (ru_singbox/owrt_singbox) читают один файл.
+#   private_key -> edge inbound; public_key/short_id -> роутер + клиенты; uuid -> VLESS auth.
+# Генерация делегируется на edge (там есть бинарь sing-box; на control node его нет).
+
+- name: Set reality secrets path
+  ansible.builtin.set_fact:
+    reality_secrets_file: "{{ playbook_dir }}/secrets/reality.yml"
+
+- name: Check for existing reality keypair
+  ansible.builtin.stat:
+    path: "{{ reality_secrets_file }}"
+  delegate_to: localhost
+  become: false
+  run_once: true
+  register: _reality_stat
+
+# Генерим лишь когда файла нет ИЛИ просят ротацию — иначе changed=0 (идемпотентность).
+- name: Generate reality keypair material
+  when: (not _reality_stat.stat.exists) or (reality_keypair_regenerate | bool)
+  run_once: true
+  block:
+    - name: Generate reality keypair on edge (has sing-box)
+      ansible.builtin.command: sing-box generate reality-keypair
+      delegate_to: "{{ groups['ru_vps'][0] }}"
+      changed_when: true
+      register: _reality_kp
+
+    - name: Generate reality short_id on edge
+      ansible.builtin.command: sing-box generate rand 8 --hex
+      delegate_to: "{{ groups['ru_vps'][0] }}"
+      changed_when: true
+      register: _reality_sid
+
+    - name: Generate reality uuid on edge
+      ansible.builtin.command: sing-box generate uuid
+      delegate_to: "{{ groups['ru_vps'][0] }}"
+      changed_when: true
+      register: _reality_uuid
+
+    - name: Persist reality material on control node (gitignored)
+      ansible.builtin.copy:
+        dest: "{{ reality_secrets_file }}"
+        mode: '0600'
+        content: |
+          ---
+          # Managed by the reality_keys role — VLESS+Reality material for the
+          # home->edge leg. Gitignored. Rotate via reality_keypair_regenerate: true.
+          reality_private_key: "{{ _reality_kp.stdout_lines | select('match', '^PrivateKey:') | first | regex_replace('^PrivateKey:\\s*', '') }}"
+          reality_public_key:  "{{ _reality_kp.stdout_lines | select('match', '^PublicKey:') | first | regex_replace('^PublicKey:\\s*', '') }}"
+          reality_short_id:    "{{ _reality_sid.stdout | trim }}"
+          reality_uuid:        "{{ _reality_uuid.stdout | trim }}"
+      delegate_to: localhost
+      become: false
+
+- name: Load reality material
+  ansible.builtin.include_vars:
+    file: "{{ reality_secrets_file }}"

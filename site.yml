@@ -36,6 +36,10 @@
       tags: [ru_fronting, ru, web]
     - role: ru_letsencrypt
       tags: [ru_letsencrypt, ru, web, letsencrypt]
+    # Генерит/загружает VLESS+Reality материал (secrets/reality.yml) ДО ru_singbox,
+    # которому нужен reality_private_key для inbound vless-reality-in на :443.
+    - role: reality_keys
+      tags: [reality_keys, ru_singbox, ru, singbox]
     - role: ru_singbox
       tags: [ru_singbox, ru, singbox]
     - role: firewall

@@ -2,16 +2,18 @@
 # owrt_singbox — sing-box TUN на роутере OpenWrt (GL-MT6000 / Flint 2).
 # Leg home→edge: ручной переключатель router_primary_transport (по образцу
 # de_uplink_transport на edge). hysteria2 (UDP/QUIC + obfs salamander) — primary;
+# reality (VLESS+Reality+gRPC на :443, TCP) — whitelist/зарез-UDP страховка;
 # shadowtls v3 (TCP) — fallback на случай, если ТСПУ срежет QUIC/UDP. edge всегда
-# слушает оба inbound (hy2-in + shadowtls-in), переключение = смена переменной +
-# редеплой только роутера (edge не трогаем).
+# слушает все три inbound (hy2-in + vless-reality-in + shadowtls-in), переключение
+# = смена переменной + редеплой только роутера (edge не трогаем).
 - name: assert router transport is supported
   ansible.builtin.assert:
-    that: router_primary_transport in ['hysteria2', 'shadowtls']
+    that: router_primary_transport in ['hysteria2', 'reality', 'shadowtls']
     fail_msg: >-
-      router_primary_transport должен быть 'hysteria2' (UDP/QUIC, primary) или
-      'shadowtls' (TCP-fallback). edge держит оба inbound (hy2-in + shadowtls-in);
-      переключение = смена переменной + редеплой только роутера.
+      router_primary_transport должен быть 'hysteria2' (UDP/QUIC, primary),
+      'reality' (VLESS+Reality+gRPC :443, whitelist/TCP) или 'shadowtls'
+      (TCP-fallback). edge держит все три inbound (hy2-in + vless-reality-in +
+      shadowtls-in); переключение = смена переменной + редеплой только роутера.
 
 - name: gather openwrt facts
   community.openwrt.setup:

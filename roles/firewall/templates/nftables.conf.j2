@@ -15,8 +15,11 @@ table inet filter {
 
     {% if 'ru_vps' in group_names %}
     tcp dport 80 accept
-    # home->edge transports: hysteria2 (UDP/QUIC) primary, shadowtls (TCP) fallback
+    # home->edge transports: hysteria2 (UDP/QUIC) primary, vless-reality+gRPC
+    # (TCP :443) whitelist/страховка, shadowtls (TCP) fallback. Все три inbound
+    # на edge всегда включены; активный на роутере выбирает router_primary_transport.
     udp dport {{ hy2_port }} accept
+    tcp dport 443 accept
     tcp dport {{ shadowtls_port }} accept
     {% if ru_public_proxy_enable | bool %}
     tcp dport {{ ru_public_proxy_socks_port }} accept

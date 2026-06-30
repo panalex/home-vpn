@@ -1,0 +1,17 @@
+---
+# reality_keys — общие knobs для leg home→edge Reality (VLESS+Reality+gRPC).
+# Дефолты низкого приоритета: видны последующим ролям (ru_singbox/owrt_singbox)
+# в обоих плейбуках. Боевые значения переопределяй в group_vars/all.yml.
+
+# Донорский SNI для Reality (handshake форвардится на него; клиент шлёт его в SNI).
+# Подобран автопроверкой с самого edge (TLS1.3+h2, минимальный риск). См. README.
+reality_donor_sni: "ya.ru"
+
+# gRPC service_name (HTTP/2 :path = /<service_name>/Tun). ВНУТРИ Reality-туннеля,
+# в открытый эфир НЕ попадает — DPI его не видит; важно лишь совпадение обоих
+# концов. Произвольная неприметная строка. Меняешь — синхронизируй edge+роутер+клиент.
+reality_grpc_service_name: "tunsvc"
+
+# Ротация keypair: true → reality_keys перегенерит secrets/reality.yml на edge.
+# После ротации: редеплой edge + роутера + перевыпуск клиентских конфигов.
+reality_keypair_regenerate: false
