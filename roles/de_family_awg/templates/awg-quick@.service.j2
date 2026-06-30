@@ -1,0 +1,21 @@
+# {{ ansible_managed }}
+# Fallback awg-quick@.service — deployed ONLY if amneziawg-tools didn't ship its
+# own unit. Mirrors the upstream wg-quick@/awg-quick@ template.
+[Unit]
+Description=AmneziaWG via awg-quick(8) for %I
+After=network-online.target nss-lookup.target nftables.service
+Wants=network-online.target nss-lookup.target
+PartOf=awg-quick.target
+Documentation=man:awg-quick(8)
+Documentation=man:awg(8)
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=WG_ENDPOINT_RESOLUTION_RETRIES=infinity
+ExecStart=/usr/bin/awg-quick up %i
+ExecStop=/usr/bin/awg-quick down %i
+ExecReload=/bin/bash -c 'exec /usr/bin/awg syncconf %i <(exec /usr/bin/awg-quick strip %i)'
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,93 @@
+---
+# AmneziaWG (DKMS kernel module via Amnezia PPA) + unbound. Userspace
+# amneziawg-go is the documented fallback (README) if the module won't build.
+
+- name: Add Amnezia PPA
+  ansible.builtin.apt_repository:
+    repo: "{{ awg_family_ppa }}"
+    state: present
+    update_cache: true
+
+- name: Install kernel headers for the running kernel (DKMS build dep)
+  ansible.builtin.apt:
+    name: "linux-headers-{{ ansible_facts['kernel'] }}"
+    state: present
+    update_cache: false
+
+- name: Install AmneziaWG (DKMS module + tools) and unbound
+  ansible.builtin.apt:
+    name:
+      - amneziawg-dkms
+      - amneziawg-tools
+      - unbound
+      - dns-root-data
+      - openssl
+    state: present
+    update_cache: true
+  register: awg_family_pkg
+
+- name: Load the amneziawg kernel module
+  community.general.modprobe:
+    name: "{{ awg_family_kernel_module }}"
+    state: present
+  register: awg_family_modprobe
+  failed_when: false
+
+- name: Persist module autoload at boot
+  ansible.builtin.copy:
+    dest: /etc/modules-load.d/amneziawg.conf
+    content: "{{ awg_family_kernel_module }}\n"
+    owner: root
+    group: root
+    mode: '0644'
+  when: awg_family_modprobe.failed | default(false) == false
+
+- name: Warn if the kernel module failed to load (manual fallback required)
+  ansible.builtin.fail:
+    msg: >-
+      amneziawg kernel module failed to load (rc={{ awg_family_modprobe.rc | default('n/a') }}).
+      The DKMS build likely failed for kernel {{ ansible_facts['kernel'] }}.
+      Fall back to userspace amneziawg-go per roles/de_family_awg/README.md,
+      then re-run with the module path bypassed.
+  when: awg_family_modprobe.failed | default(false)
+
+- name: Enable IPv4 forwarding (own sysctl drop-in, isolated from main stack)
+  ansible.posix.sysctl:
+    name: net.ipv4.ip_forward
+    value: '1'
+    state: present
+    sysctl_file: /etc/sysctl.d/99-awg-family.conf
+    reload: true
+
+- name: Ensure AmneziaWG config dir exists
+  ansible.builtin.file:
+    path: "{{ awg_family_config_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+
+- name: Ensure /etc/nftables.d exists (for the firewall drop-in)
+  ansible.builtin.file:
+    path: /etc/nftables.d
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+# awg-quick@.service is normally shipped by amneziawg-tools. Deploy a fallback
+# template only if the package didn't provide it.
+- name: Check for packaged awg-quick@.service
+  ansible.builtin.stat:
+    path: /lib/systemd/system/awg-quick@.service
+  register: awg_family_quick_unit
+
+- name: Deploy fallback awg-quick@.service
+  ansible.builtin.template:
+    src: awg-quick@.service.j2
+    dest: /etc/systemd/system/awg-quick@.service
+    owner: root
+    group: root
+    mode: '0644'
+  when: not awg_family_quick_unit.stat.exists
+  notify: Restart awg-family

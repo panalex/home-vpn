@@ -1,0 +1,57 @@
+---
+# de_family_awg — isolated AmneziaWG 2.0 endpoint on the DE node for a family
+# member's Keenetic router. Deliberately independent from the sing-box stack:
+# own port, subnet, DNS resolver, systemd units, keys and nftables tables.
+# See README.md for rationale and peer-management workflow.
+
+# Opt-in guard. The role is NOT wired into site.yml; deploy via family.yml.
+# Kept as a second safety latch so an accidental include is still inert.
+awg_family_enabled: false
+
+# --- Network identity -------------------------------------------------------
+awg_family_interface: "awg-family"
+awg_family_subnet: "10.42.0.0/24"
+awg_family_subnet_prefix: 24
+awg_family_server_ip: "10.42.0.1"
+
+# Listen port: generated once into secrets/awg_family.yml (random 30000-50000)
+# and reused on every subsequent run. Override here only to pin a value.
+awg_family_port_min: 30000
+awg_family_port_max: 50000
+
+# Public endpoint clients dial. Defaults to the DE host's primary IPv4.
+awg_family_endpoint_host: "{{ ansible_facts['default_ipv4']['address'] }}"
+
+# Egress interface for NAT masquerade (same idiom as de_wdtt).
+awg_family_egress_iface: "{{ ansible_facts['default_ipv4']['interface'] }}"
+
+# --- Filesystem layout ------------------------------------------------------
+# awg-quick reads <config_dir>/<interface>.conf
+awg_family_config_dir: "/etc/amnezia/amneziawg"
+# Per-peer client .conf files rendered here on the control node (gitignored).
+awg_family_client_dir: "{{ playbook_dir }}/client_configs/awg-family"
+# Generated server keys + shared ASC params (gitignored, generated once).
+awg_family_secrets_file: "{{ playbook_dir }}/secrets/awg_family.yml"
+# Per-peer keys/PSK, one file each (gitignored, generated once per peer).
+awg_family_peer_secrets_dir: "{{ playbook_dir }}/secrets/awg_family_peers"
+
+# --- DNS (dedicated unbound instance, bound to the tunnel IP only) ----------
+awg_family_dns_config: "/etc/unbound/unbound-family.conf"
+awg_family_dns_upstream:
+  - { ip: "1.1.1.1", port: 853, sni: "cloudflare-dns.com" }
+  - { ip: "1.0.0.1", port: 853, sni: "cloudflare-dns.com" }
+  - { ip: "9.9.9.9", port: 853, sni: "dns.quad9.net" }
+
+# --- Peers ------------------------------------------------------------------
+# Append entries to add peers; existing peers' secrets are never regenerated.
+# ASC params are shared server-wide (AWG requires one ASC set per interface),
+# so peers do NOT carry per-peer ASC — they mirror the server's shared set.
+awg_family_peers:
+  - name: "mama-keenetic-yola"
+    ip: "10.42.0.10"
+
+# --- AmneziaWG install ------------------------------------------------------
+# DKMS kernel module from the Amnezia PPA (preferred); userspace amneziawg-go
+# is the documented fallback (README) if the module fails to build/load.
+awg_family_ppa: "ppa:amnezia/amnezia"
+awg_family_kernel_module: "amneziawg"

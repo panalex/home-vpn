@@ -1,0 +1,41 @@
+---
+# de_family_awg orchestrator. Opt-in: does nothing unless awg_family_enabled.
+- name: Skip de_family_awg (awg_family_enabled is false)
+  ansible.builtin.debug:
+    msg: "de_family_awg disabled — set awg_family_enabled: true to deploy"
+  when: not (awg_family_enabled | bool)
+
+- name: Deploy isolated AmneziaWG family endpoint
+  when: awg_family_enabled | bool
+  block:
+    - name: Install AmneziaWG + unbound
+      ansible.builtin.import_tasks: install.yml
+
+    - name: Configure server (keys, ASC, interface)
+      ansible.builtin.import_tasks: server.yml
+
+    - name: Generate peers + client configs
+      ansible.builtin.import_tasks: peers.yml
+
+    - name: Configure dedicated unbound resolver
+      ansible.builtin.import_tasks: dns.yml
+
+    - name: Apply firewall rules
+      ansible.builtin.import_tasks: firewall.yml
+
+    - name: Flush handlers
+      ansible.builtin.meta: flush_handlers
+
+    - name: Enable and start awg-family
+      ansible.builtin.systemd:
+        name: "awg-quick@{{ awg_family_interface }}"
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Enable and start unbound-family
+      ansible.builtin.systemd:
+        name: unbound-family
+        enabled: true
+        state: started
+        daemon_reload: true

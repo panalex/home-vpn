@@ -1,0 +1,19 @@
+---
+- name: Restart awg-family
+  ansible.builtin.systemd:
+    name: "awg-quick@{{ awg_family_interface }}"
+    state: restarted
+    daemon_reload: true
+
+- name: Restart unbound-family
+  ansible.builtin.systemd:
+    name: unbound-family
+    state: restarted
+    daemon_reload: true
+
+# Re-applies the full ruleset (central firewall + all /etc/nftables.d drop-ins).
+# Same idiom as de_wdtt so our drop-in is picked up without touching the
+# firewall role.
+- name: Apply nftables
+  ansible.builtin.command: nft -f /etc/nftables.conf
+  changed_when: true
