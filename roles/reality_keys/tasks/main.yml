@@ -6,10 +6,6 @@
 #   private_key -> edge inbound; public_key/short_id -> роутер + клиенты; uuid -> VLESS auth.
 # Генерация делегируется на edge (там есть бинарь sing-box; на control node его нет).
 
-- name: Set reality secrets path
-  ansible.builtin.set_fact:
-    reality_secrets_file: "{{ playbook_dir }}/secrets/reality.yml"
-
 - name: Check for existing reality keypair
   ansible.builtin.stat:
     path: "{{ reality_secrets_file }}"
@@ -49,8 +45,8 @@
           ---
           # Managed by the reality_keys role — VLESS+Reality material for the
           # home->edge leg. Gitignored. Rotate via reality_keypair_regenerate: true.
-          reality_private_key: "{{ _reality_kp.stdout_lines | select('match', '^PrivateKey:') | first | regex_replace('^PrivateKey:\\s*', '') }}"
-          reality_public_key:  "{{ _reality_kp.stdout_lines | select('match', '^PublicKey:') | first | regex_replace('^PublicKey:\\s*', '') }}"
+          reality_private_key: "{{ (_reality_kp.stdout_lines | select('match', '^PrivateKey:') | first).split(':', 1)[1] | trim }}"
+          reality_public_key:  "{{ (_reality_kp.stdout_lines | select('match', '^PublicKey:') | first).split(':', 1)[1] | trim }}"
           reality_short_id:    "{{ _reality_sid.stdout | trim }}"
           reality_uuid:        "{{ _reality_uuid.stdout | trim }}"
       delegate_to: localhost

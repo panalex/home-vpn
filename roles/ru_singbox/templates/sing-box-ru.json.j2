@@ -89,12 +89,9 @@
       "password": "{{ shadowtls_ss_secret }}"
     },
 {# home->edge leg: VLESS+Reality+gRPC на публичном :443 (whitelist/TCP-страховка
-   к hy2). gRPC даёт HTTP/2-mux — веер LAN-флоу из роутерного TUN схлопывается
-   в 1-2 соединения к ОДНОМУ донорскому SNI, снимая поведенческий триггер
-   «много TCP к одному SNI». Reality форвардит реальный TLS1.3-handshake на
-   reality_donor_sni (active-probe видит настоящий донор). hy2-in/shadowtls-in
-   НЕ трогаем — Reality добавляется, не заменяет. Egress тот же: route ниже
-   заворачивает vless-reality-in в активный edge→DE outbound. #}
+   к hy2; обоснование gRPC-mux/Reality/донора — в group_vars/all.yml). Локально:
+   hy2-in/shadowtls-in НЕ трогаем (Reality добавляется, не заменяет), egress тот
+   же — route ниже заворачивает vless-reality-in в активный edge→DE outbound. #}
     {
       "type": "vless",
       "tag": "vless-reality-in",
