@@ -3,6 +3,11 @@
   roles:
     - role: community.openwrt.init
       tags: [owrt_init]
+    # Загружает VLESS+Reality материал (secrets/reality.yml) ДО owrt_singbox —
+    # роутерному outbound нужны reality_public_key/short_id/uuid при
+    # router_primary_transport=reality. Генерация делегируется на edge (ru_vps).
+    - role: reality_keys
+      tags: [reality_keys, owrt_singbox, singbox]
     - role: owrt_singbox
       tags: [owrt_singbox, singbox]
     - role: owrt_nfqws

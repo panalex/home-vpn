@@ -39,6 +39,11 @@
     hysteria2 (primary): UDP/QUIC + obfs salamander; TLS поверх QUIC валидирует
   УЖЕ существующий LE-серт edge (server_name = {{ domain }}). Brutal ВЫКЛЮЧЕН
   сознательно: up/down mbps не задаём (ровный паттерн → поведенческий детект).
+    reality (whitelist/TCP-страховка): VLESS+Reality+gRPC на :443. Маскируется
+  под reality_donor_sni (реальный TLS1.3-сайт, handshake форвардится туда),
+  utls fingerprint=chrome. gRPC = HTTP/2-mux: весь веер LAN-флоу схлопывается в
+  1-2 TCP к ОДНОМУ SNI — снимает триггер «много TCP к одному SNI». НЕ XHTTP
+  (ядро sing-box не поддерживает) и НЕ голый TCP+Reality (детект сигнатурой ТСПУ).
     shadowtls (fallback): TCP, маскирует TLS1.3-handshake под
   {{ shadowtls_handshake_server }}, внутри SS2022 (shadowtls_ss_*). multiplex НЕ
   включаем — edge-инбаунд shadowtls-ss-in идёт без mux, рвать симметрию нельзя
@@ -59,6 +64,31 @@
         "enabled": true,
         "server_name": "{{ domain }}",
         "alpn": ["h3"]
+      }
+    },
+{% elif router_primary_transport == 'reality' %}
+    {
+      "type": "vless",
+      "tag": "proxy",
+      "server": "{{ _edge_vps_ip }}",
+      "server_port": 443,
+      "uuid": "{{ reality_uuid }}",
+      "tls": {
+        "enabled": true,
+        "server_name": "{{ reality_donor_sni }}",
+        "utls": {
+          "enabled": true,
+          "fingerprint": "chrome"
+        },
+        "reality": {
+          "enabled": true,
+          "public_key": "{{ reality_public_key }}",
+          "short_id": "{{ reality_short_id }}"
+        }
+      },
+      "transport": {
+        "type": "grpc",
+        "service_name": "{{ reality_grpc_service_name }}"
       }
     },
 {% else %}

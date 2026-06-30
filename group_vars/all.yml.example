@@ -60,9 +60,10 @@ router_singbox_watchdog: true
 # поведенческого детекта. Оставляем штатный congestion control.
 
 # --- hysteria2 (primary). UDP-порт без коллизий с 22/80/443/1080/1081/2080/
-#     2081/4433/8388/8443/9443/56000/56001 и НЕ 443 (там ocserv udp на DE,
-#     на edge — mtg). Если провайдер режет этот UDP-порт/QUIC — сменить на другой
-#     высокий UDP-порт и редеплой edge+роутер (см. README, шаг (f)). ---
+#     2081/4433/8388/8443/9443/56000/56001 и НЕ 443 (там ocserv udp на DE; на
+#     edge :443/TCP теперь занят vless-reality-in — см. секцию Reality ниже).
+#     Если провайдер режет этот UDP-порт/QUIC — сменить на другой высокий UDP-порт
+#     и редеплой edge+роутер (см. README, шаг (f)). ---
 hy2_port: 39443
 hy2_password: "REPLACE_ME_BASE64_32_BYTES"       # openssl rand -base64 32
 hy2_obfs_password: "REPLACE_ME_BASE64_32_BYTES"  # openssl rand -base64 32
@@ -80,13 +81,44 @@ shadowtls_handshake_server: "www.microsoft.com"
 shadowtls_ss_method: "2022-blake3-aes-256-gcm"
 shadowtls_ss_secret: "REPLACE_ME_BASE64_32_BYTES"  # openssl rand -base64 32
 
-# Активный транспорт на РОУТЕРЕ: hysteria2 (primary) | shadowtls (fallback).
-# Edge ВСЕГДА слушает оба inbound (hy2-in + shadowtls-in), поэтому переключение —
-# смена этой переменной + редеплой ТОЛЬКО роутера (edge не трогаем). owrt_singbox
-# рендерит соответствующий outbound (тег proxy); любое другое значение валит
-# assert. Держим hysteria2, пока QUIC/UDP не режут; на shadowtls переходим, если
-# провайдер срежет UDP целиком.
+# Активный транспорт на РОУТЕРЕ: hysteria2 (primary) | reality (whitelist/TCP) |
+# shadowtls (fallback). Edge ВСЕГДА слушает все три inbound (hy2-in +
+# vless-reality-in + shadowtls-in), поэтому переключение — смена этой переменной +
+# редеплой ТОЛЬКО роутера (edge не трогаем). owrt_singbox рендерит соответствующий
+# outbound (тег proxy); любое другое значение валит assert. Держим hysteria2, пока
+# QUIC/UDP не режут; на reality переходим при whitelist-режиме ТСПУ или зарезе UDP
+# (TCP :443, gRPC-mux, маскировка под reality_donor_sni); shadowtls — запасной TCP.
 router_primary_transport: hysteria2
+
+# =============================================================================
+# Транспорт leg home→edge — VLESS+Reality+gRPC (whitelist/TCP-страховка к hy2)
+# =============================================================================
+# Третий always-on inbound на edge: VLESS+Reality+gRPC на публичном tcp/443.
+# Зачем именно так:
+#   * Reality маскирует коннект под РЕАЛЬНЫЙ популярный RU TLS1.3-сайт
+#     (reality_donor_sni): edge форвардит на него настоящий TLS-handshake, поэтому
+#     active-probe ТСПУ видит подлинный сайт, а не прокси. Донор подобран
+#     автопроверкой С САМОГО edge (TLS1.3 + ALPN h2 + минимальный RTT/риск).
+#   * gRPC = HTTP/2-mux: весь веер LAN-флоу из роутерного TUN схлопывается в 1-2
+#     TCP-соединения к ОДНОМУ SNI — снимает поведенческий триггер «много TCP к
+#     одному SNI/IP». ИМЕННО gRPC: НЕ XHTTP (ядро sing-box не поддерживает — 0
+#     байт на приём), НЕ голый TCP+Reality (детектится сигнатурой ТСПУ с мая 2026).
+#
+# Keypair/short_id/uuid НЕ задаются здесь: роль reality_keys генерит их ОДИН раз
+# (sing-box generate reality-keypair на edge) в secrets/reality.yml (gitignored),
+# идемпотентно. private_key → edge, public_key/short_id → роутер+клиенты, uuid →
+# VLESS auth. Ротация: reality_keypair_regenerate: true (defaults роли reality_keys)
+# → редеплой edge+роутера + перевыпуск клиентских конфигов. public_key и short_id
+# для клиентов смотри в secrets/reality.yml после первого прогона.
+#
+# Донорский SNI. Дефолт ya.ru — выбран автопроверкой (Yandex AS13238, TLS1.3+h2,
+# стабилен, толерантен к повторным handshake'ам). НИКОГДА не ставь иностранный SNI
+# (на RU-IP это аномалия) и гос-домены (gosuslugi и т.п. — заметно по объёму).
+# Меняешь донора — перепроверь TLS1.3+h2 c edge и редеплой edge+роутер+клиенты.
+reality_donor_sni: "ya.ru"
+# gRPC service_name. Произвольная неприметная строка; ВНУТРИ Reality-туннеля, в
+# открытый эфир не попадает (DPI не видит). Важно лишь совпадение edge+роутер+клиент.
+reality_grpc_service_name: "tunsvc"
 
 # =============================================================================
 # Транспорт leg edge→DE (edge VPS → DE gateway) — ОДИН ТРАНСПОРТ
