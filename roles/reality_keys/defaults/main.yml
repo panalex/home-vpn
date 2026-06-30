@@ -15,3 +15,7 @@ reality_grpc_service_name: "tunsvc"
 # Ротация keypair: true → reality_keys перегенерит secrets/reality.yml на edge.
 # После ротации: редеплой edge + роутера + перевыпуск клиентских конфигов.
 reality_keypair_regenerate: false
+
+# Путь к материалу reality на control node (gitignored). Константа — держим в
+# defaults, а не в set_fact: playbook_dir доступен и тут.
+reality_secrets_file: "{{ playbook_dir }}/secrets/reality.yml"
